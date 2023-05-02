@@ -1,19 +1,26 @@
 package home
 
 import basic.col
+import basic.padding
 import basic.row
 import carousel.textCarousel
 import kotlinx.html.*
+import model.User
+import tracks.completedTracks
+import tracks.inProgressTracks
 
-fun FlowContent.home() = row {
+fun FlowContent.home(user: User) = row {
     col(xs = 12, sm = 12) {
         div("home-content") {
             row("flex-v-align") {
                 homePhoto()
                 homeText()
-
-                technologies()
             }
+            padding(20)
+            technologies()
+            completedTracks(user)
+            inProgressTracks(user)
+
         }
     }
 }

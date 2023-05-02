@@ -2260,8 +2260,8 @@ ul.social-links li:last-child a {
 
 /* /Testimonials */
 
-/* home.carousel-container */
-.carousel-card {
+/* home.technologies */
+.technology-block {
     text-align: center;
     opacity: 0.9;
     -webkit-transition: all 0.2s ease-in-out;
@@ -2282,44 +2282,44 @@ ul.social-links li:last-child a {
     overflow: hidden;
 }
 
-.carousel-card:hover {
+.technology-block:hover {
     opacity: 1;
 }
 
-.carousel-card a {
+.technology-block a {
     height: 80px;
     width: 150px;
     margin: 0 auto;
 }
 
-/* /home.carousel-container */
+/* /home.technologies */
 
-/* home.carousel-container Slider */
-.carousel-container.owl-carousel .carousel-card {
+/* home.technologies Slider */
+.technologies.owl-carousel .technology-block {
     padding: 10px 15px 15px;
     margin-bottom: 15px;
 }
 
-.carousel-container.owl-carousel .owl-item img {
+.technologies.owl-carousel .owl-item img {
     display: block;
     width: 100%;
     max-width: 100px;
 }
 
-.carousel-container.owl-carousel .owl-dots,
+.technologies.owl-carousel .owl-dots,
 .testimonials.owl-carousel .owl-dots {
     position: relative;
     width: 100%;
     text-align: center;
 }
 
-.carousel-container.owl-carousel .owl-dot,
+.technologies.owl-carousel .owl-dot,
 .testimonials.owl-carousel .owl-dot {
     display: inline-block;
     margin: 3px 0;
 }
 
-.carousel-container.owl-carousel .owl-dot span,
+.technologies.owl-carousel .owl-dot span,
 .testimonials.owl-carousel .owl-dot span {
     display: block;
     height: 3px;
@@ -2334,20 +2334,20 @@ ul.social-links li:last-child a {
     transition: all .25s ease-in-out;
 }
 
-.carousel-container.owl-carousel .owl-dot.active span,
-.carousel-container.owl-carousel .owl-dot:hover span,
+.technologies.owl-carousel .owl-dot.active span,
+.technologies.owl-carousel .owl-dot:hover span,
 .testimonials.owl-carousel .owl-dot.active span,
 .testimonials.owl-carousel .owl-dot:hover span {
     background-color: #e3f2fd;
 }
 
-.carousel-container.owl-carousel .owl-dot.active span,
+.technologies.owl-carousel .owl-dot.active span,
 .testimonials.owl-carousel .owl-dot.active span {
     background-color: #e3f2fd;
     width: 30px;
 }
 
-/* /home.carousel-container Slider */
+/* /home.technologies Slider */
 
 /* Info Block */
 .lm-info-block {
@@ -2880,13 +2880,13 @@ ul.social-links li:last-child a {
 /* =============================================================================
 7. Sliders
 ============================================================================= */
-/* Testimonials & home.carousel-container Carousel */
+/* Testimonials & home.technologies Carousel */
 .testimonials {
     width: 100%;
 }
 
 .testimonials.owl-carousel .owl-nav,
-.carousel-container.owl-carousel .owl-nav {
+.technologies.owl-carousel .owl-nav {
     position: absolute;
     text-align: right;
     right: 0;
@@ -2894,14 +2894,14 @@ ul.social-links li:last-child a {
 }
 
 .testimonials.owl-carousel .owl-nav .owl-prev,
-.carousel-container.owl-carousel .owl-nav .owl-prev {
+.technologies.owl-carousel .owl-nav .owl-prev {
     margin-right: 3px;
 }
 
 .testimonials.owl-carousel .owl-nav .owl-prev,
 .testimonials.owl-carousel .owl-nav .owl-next,
-.carousel-container.owl-carousel .owl-nav .owl-prev,
-.carousel-container.owl-carousel .owl-nav .owl-next {
+.technologies.owl-carousel .owl-nav .owl-prev,
+.technologies.owl-carousel .owl-nav .owl-next {
     display: inline-block;
     font-family: "Font Awesome 5 Free";
     font-weight: 900;
@@ -2918,8 +2918,8 @@ ul.social-links li:last-child a {
 
 .testimonials.owl-carousel .owl-nav .owl-prev:hover,
 .testimonials.owl-carousel .owl-nav .owl-next:hover,
-.carousel-container.owl-carousel .owl-nav .owl-prev:hover,
-.carousel-container.owl-carousel .owl-nav .owl-next:hover {
+.technologies.owl-carousel .owl-nav .owl-prev:hover,
+.technologies.owl-carousel .owl-nav .owl-next:hover {
     color: #fff;
     background-color: #e3f2fd;
     border-color: #e3f2fd;
@@ -2927,8 +2927,8 @@ ul.social-links li:last-child a {
 
 .testimonials.owl-carousel .owl-nav .owl-prev:before,
 .testimonials.owl-carousel .owl-nav .owl-next:before,
-.carousel-container.owl-carousel .owl-nav .owl-prev:before,
-.carousel-container.owl-carousel .owl-nav .owl-next:before {
+.technologies.owl-carousel .owl-nav .owl-prev:before,
+.technologies.owl-carousel .owl-nav .owl-next:before {
     position: relative;
     margin: 2px;
     width: 22px;
@@ -2941,16 +2941,16 @@ ul.social-links li:last-child a {
 }
 
 .testimonials.owl-carousel .owl-nav .owl-prev:before,
-.carousel-container.owl-carousel .owl-nav .owl-prev:before {
+.technologies.owl-carousel .owl-nav .owl-prev:before {
     content: "\f053";
 }
 
 .testimonials.owl-carousel .owl-nav .owl-next:before,
-.carousel-container.owl-carousel .owl-nav .owl-next:before {
+.technologies.owl-carousel .owl-nav .owl-next:before {
     content: "\f054";
 }
 
-/* /Testimonials & home.carousel-container Carousel */
+/* /Testimonials & home.technologies Carousel */
 
 /* Portfolio Carousel */
 .portfolio-page-carousel {
@@ -5940,7 +5940,7 @@ a.post-thumbnail:hover {
     text-align: center;
     padding: 5px 0;
     margin-bottom: 30px;
-    opacity: 0.7;
+    opacity: 0.9;
     -webkit-transition: all 0.2s ease-in-out;
     -moz-transition: all 0.2s ease-in-out;
     -o-transition: all 0.2s ease-in-out;
@@ -5953,7 +5953,8 @@ a.post-thumbnail:hover {
 }
 
 .technology-block img {
-    max-width: 80px;
+    width: 80px;
+    height: 80px;
     margin: 0 auto;
 }
 
@@ -5975,10 +5976,6 @@ a.post-thumbnail:hover {
     opacity: 1;
 }
 
-.technology-block img {
-    max-width: 80px;
-    margin: 0 auto;
-}
 /* /technologies */
 
 /* technologies Slider */
