@@ -1,14 +1,14 @@
 package carousel
 
-import kotlinx.html.FlowContent
-import kotlinx.html.div
-import kotlinx.html.style
+import react.RBuilder
+import react.dom.div
+import react.dom.style
 
-inline fun FlowContent.textCarousel(vararg texts: String, crossinline block: FlowContent.() -> Unit = {}) =
+fun RBuilder.textCarousel(vararg texts: String) =
     div("text-carousel") {
         texts.forEachIndexed { index, text ->
             div("text-carousel-item item") {
-                style = "animation-delay: ${index * 2}s"
+                style("animation-delay: ${index * 2}s")
                 +text
             }
         }

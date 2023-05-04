@@ -39,7 +39,8 @@ data class User(
     val discordId: String,
     val visibility: String,
     val cover: String
-)
+) {
+}
 
 @Serializable
 data class Gamification(

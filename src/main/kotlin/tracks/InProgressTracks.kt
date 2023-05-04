@@ -1,6 +1,7 @@
 package tracks
 
-import kotlinx.html.FlowContent
+import getTracks
 import model.User
+import react.RBuilder
 
-fun FlowContent.inProgressTracks(user: User) = tracks("Tracks in progress", user.completedTracks)
+fun RBuilder.inProgressTracks(user: User) = tracks("Tracks in progress", getTracks(user.completedTracks))

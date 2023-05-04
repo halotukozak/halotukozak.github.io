@@ -1,19 +1,21 @@
 package home
 
 import basic.col
-import basic.padding
 import basic.row
 import basic.sectionTitle
-import kotlinx.html.*
+import react.RBuilder
+import react.dom.a
+import react.dom.div
+import react.dom.img
 
-fun FlowContent.technologies() = row {
+fun RBuilder.technologies() = row {
     col(xs = 12, sm = 12) {
         sectionTitle("Technologies")
 
         div("technologies owl-carousel") {
-            attributes["data-mobile-items"] = "1"
-            attributes["data-tablet-items"] = "3"
-            attributes["data-items"] = "10"
+            attrs["data-mobile-items"] = "1"
+            attrs["data-tablet-items"] = "3"
+            attrs["data-items"] = "10"
 
             listOf(
                 "Kotlin",
@@ -28,13 +30,11 @@ fun FlowContent.technologies() = row {
                 "C"
             ).map { technologyName ->
                 div("technology-block") {
-                    a {
-                        href = "#"
-                        target = "_blank"
-                        title = technologyName
-                        img {
-                            src = "./img/technologies/$technologyName.svg"
+                    a(href = "#", target = "_blank") {
+                        img(
+                            src = "./img/technologies/$technologyName.svg",
                             alt = technologyName
+                        ) {
                         }
                     }
                 }

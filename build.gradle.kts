@@ -1,3 +1,4 @@
+import org.gradle.kotlin.dsl.kotlin
 import org.jetbrains.kotlin.gradle.targets.js.webpack.KotlinWebpackConfig.*
 
 
@@ -29,6 +30,7 @@ dependencies {
     implementation(enforcedPlatform("org.jetbrains.kotlin-wrappers:kotlin-wrappers-bom:1.0.0-pre.354"))
     implementation("org.jetbrains.kotlin-wrappers:kotlin-react")
     implementation("org.jetbrains.kotlin-wrappers:kotlin-react-dom")
+    implementation("org.jetbrains.kotlin-wrappers:kotlin-react-dom-legacy")
     implementation("org.jetbrains.kotlinx:kotlinx-html-js:0.8.0")
 
     // Coroutines & serialization

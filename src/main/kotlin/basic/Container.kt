@@ -1,27 +1,47 @@
 package basic
 
-import header.header
-import kotlinx.html.*
+import kotlinx.html.role
+import react.RBuilder
+import react.dom.attrs
+import react.dom.div
+import react.dom.h2
 
-fun TagConsumer<*>.container(block: FlowContent.() -> Unit) =
-    div("page-scroll") {
-        div("page-container bg-move-effect") {
-            header()
-            block()
-        }
-    }
 
-inline fun FlowContent.row(classes: String? = null, crossinline block: FlowContent.() -> Unit) =
-    div("row " + (classes ?: "")) {
+inline fun RBuilder.container(crossinline block: RBuilder.() -> Unit) = div("page-scroll") {
+    div("page-container bg-move-effect") {
         block()
     }
+}
 
-inline fun FlowContent.col(
+
+inline fun RBuilder.main(crossinline block: RBuilder.() -> Unit) {
+    div("site-main") {
+        div("single-page-content") {
+            div("content-area") {
+                div("page-content site-content single-post") {
+                    attrs {
+                        role = "main"
+                    }
+                    block()
+                }
+            }
+        }
+    }
+}
+
+
+inline fun RBuilder.row(
+    classes: String? = null,
+    crossinline block: RBuilder.() -> Unit
+) = div("row " + (classes ?: "")) { block() }
+
+
+inline fun RBuilder.col(
     xs: Int? = null,
     sm: Int? = null,
     md: Int? = null,
     lg: Int? = null,
-    crossinline block: FlowContent.() -> Unit
+    crossinline block: RBuilder.() -> Unit
 ) = div(classes = buildString {
     xs?.let { append(" col-xs-$xs") }
     sm?.let { append(" col-sm-$sm") }
@@ -30,20 +50,8 @@ inline fun FlowContent.col(
 }) { block() }
 
 
-inline fun FlowContent.main(crossinline block: FlowContent.() -> Unit = {}) = div("site-main") {
-    div("single-page-content") {
-        div("content-area") {
-            div("page-content site-content single-post") {
-                role = "main"
-                block()
-            }
-        }
-    }
-}
+fun RBuilder.padding(p: Int) = div("p-$p") {}
 
-fun FlowContent.padding(p: Int) =
-    div("p-$p")
+fun RBuilder.sectionTitle(title: String) = row { div("block-title") { h2 { +title } } }
 
-fun FlowContent.sectionTitle(title: String) =
-    row { div("block-title") { h2 { +title } } }
 

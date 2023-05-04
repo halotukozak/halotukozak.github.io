@@ -4,34 +4,40 @@ import basic.col
 import basic.padding
 import basic.row
 import carousel.textCarousel
-import kotlinx.html.*
 import model.User
+import react.RBuilder
+import react.dom.a
+import react.dom.div
+import react.dom.h1
+import react.dom.p
 import tracks.completedTracks
-import tracks.inProgressTracks
 
-fun FlowContent.home(user: User) = row {
-    col(xs = 12, sm = 12) {
-        div("home-content") {
-            row("flex-v-align") {
-                homePhoto()
-                homeText()
+fun RBuilder.home(user: User) =
+    row {
+        col(xs = 12, sm = 12) {
+            div("home-content") {
+                row("flex-v-align") {
+                    homePhoto()
+                    homeText()
+                }
+                padding(20)
+                technologies()
+
+                completedTracks(user)
+
+//            inProgressTracks(user)
             }
-            padding(20)
-            technologies()
-            completedTracks(user)
-            inProgressTracks(user)
         }
     }
-}
 
 
-fun FlowContent.homePhoto() = col(sm = 12, md = 5, lg = 5) {
+fun RBuilder.homePhoto() = col(sm = 12, md = 5, lg = 5) {
     div("home-photo") {
-        div("hp-inner")
+        div("hp-inner") {}
     }
 }
 
-fun FlowContent.homeText() = col(sm = 12, md = 7, lg = 7) {
+fun RBuilder.homeText() = col(sm = 12, md = 7, lg = 7) {
     div("home-text hp-left") {
         textCarousel(
             "backend-developer",
@@ -52,4 +58,11 @@ fun FlowContent.homeText() = col(sm = 12, md = 7, lg = 7) {
         }
     }
 }
+
+
+
+
+
+
+
 

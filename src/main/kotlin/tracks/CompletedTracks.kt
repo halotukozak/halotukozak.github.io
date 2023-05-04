@@ -1,8 +1,8 @@
 package tracks
 
+import getTracks
 import kotlinx.html.FlowContent
 import model.User
+import react.RBuilder
 
-fun FlowContent.completedTracks(user: User) = {
-    tracks("Completed tracks", user.completedTracks)
-}
+fun RBuilder.completedTracks(user: User) = tracks("Completed tracks", getTracks(user.completedTracks))
