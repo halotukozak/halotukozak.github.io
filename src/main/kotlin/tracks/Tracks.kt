@@ -12,19 +12,21 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import model.Track
 
-fun FlowContent.tracks(title: String, tracks:List<Int>) = row {
+fun FlowContent.tracks(title: String, tracks: List<Int>) = row {
     col(xs = 12, sm = 12) {
         sectionTitle(title)
 
 
-        div("skills-info skills-first-style") {
-            div("clearfix") {
-                h4 { +"""Print Design""" }
-                div("skill-value") { +"""75%""" }
-            }
-            div("skill-container") {
-                attributes["data-value"] = "75"
-                div("skill-percentage") {
+        for (track in tracks) {
+            div("skills-info skills-first-style") {
+                div("clearfix") {
+                    h4 { +track.toString() }
+                    div("skill-value") { +"""$track%""" }
+                }
+                div("skill-container") {
+                    attributes["data-value"] = "$track"
+                    div("skill-percentage") {
+                    }
                 }
             }
         }

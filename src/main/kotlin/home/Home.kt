@@ -20,7 +20,6 @@ fun FlowContent.home(user: User) = row {
             technologies()
             completedTracks(user)
             inProgressTracks(user)
-
         }
     }
 }

@@ -7,12 +7,12 @@ import kotlinx.serialization.Serializable
 data class User(
     val id: Int,
     val avatar: String,
-    @SerialName("badgeTitle")
+    @SerialName("badge_title")
     val badgeTitle: String,
     val bio: String,
     @SerialName("fullname")
     val fullName: String,
-    val gamification: Map<String, String>,
+    val gamification: Gamification,
     @SerialName("invitation_code")
     val invitationCode: String,
     @SerialName("comments_posted")
@@ -39,4 +39,14 @@ data class User(
     val discordId: String,
     val visibility: String,
     val cover: String
+)
+
+@Serializable
+data class Gamification(
+    @SerialName("active_days") val activeDays: Int,
+    @SerialName("daily_step_completed_count") val dailyStepCompletedCount: Int,
+    @SerialName("passed_problems") val passedProblems: Int,
+    @SerialName("passed_projects") val passedProjects: Int,
+    @SerialName("passed_topics") val passedTopics: Int,
+    @SerialName("progress_updated_at") val progressUpdatedAt: String,
 )
