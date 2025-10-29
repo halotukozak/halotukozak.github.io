@@ -6,11 +6,11 @@ tags: [ 'scala', 'macro' ]
 toc: true
 ---
 
-# sth
+# Scala 3 macro vs JVM method size limit
 
-Working on my BSc Thesis, I encountered a Scala compilation error: "method too large".
-I use macros to generate code, I mean, a lot of code! We can simplify this problem to such a long list generation, but
-in real case the list creation cannot be replaced with a simple loop since the elements are not predictable.
+While working on my BSc thesis, I encountered a cryptic Scala compilation error: "method too large." I use macros to
+generate code, I mean, a lot of code! We're gonna simplify this problem to such a long list generation, but in real
+case, the list creation cannot be replaced with a simple loop since the elements are not predictable. You can think of some derivation or routing REST API generation, etc.
 
 ```scala
 import scala.quoted.*
@@ -26,9 +26,12 @@ def someMacroImpl[T: Type](n: Expr[Int], elem: Expr[T])(using Quotes): Expr[Seq[
 def usage = someMacro(100000, 42) // List(42, 42, 42, ..., 42)
 ```
 
-I assume you know a little about macros in Scala 3. [this](https://softwaremill.com/scala-3-macros-tips-and-tricks/)
-article can be helpful. But tldr; I generate a long list of repeated elements at compile time and then inject it into
-our code.
+I assume you have some familiarity with macros in Scala
+
+3. [this](https://softwaremill.com/scala-3-macros-tips-and-tricks/)
+   article can be helpful. But tl;dr, I generate a long list of repeated elements at compile time and then inject it
+   into
+   the code.
 
 Quick recap:
 
@@ -38,7 +41,7 @@ Quick recap:
 - `Quotes` parameter - Provides the context for macro expansion
 - `Expr.ofSeq` - Converts a sequence of expressions into an expression representing a sequence
 
-When I try to compile this code, I get the following error, which is not so verbose.
+When I try to compile this code, I get the following error, which is not very verbose.
 
 ```text
 Error while emitting Usage$package$
@@ -46,10 +49,11 @@ Method too large: Usage$package$.main ()Lscala/collection/immutable/Seq;
 one error found
 ```
 
-This error occurs when a single method exceeds the JVM's limit of 64KB of bytecode. But how to bypass this limitation?
-Since we cannot genarate a large method, we can split it into smaller methods.
+This error occurs when a single method exceeds the JVM's limit of 64KB of bytecode. But how can we bypass this
+limitation?
+Since we cannot generate a large method, we can split it into smaller methods.
 
-You have to know, how Scala translates local methods.
+You need to understand how Scala translates local methods.
 
 ```scala
 def sth() = {
@@ -74,7 +78,7 @@ public final class Usage$package {
 
 //decompiled from Usage$package$.class
 import java.io.Serializable;
-import scala.Predef .;
+import scala.Predef.;
 import scala.runtime.ModuleSerializationProxy;
 import scala.runtime.Nothing;
 
@@ -98,7 +102,7 @@ public final class Usage$package$ implements Serializable {
 }
 ```
 
-as you can see, the local method `local` is compiled to a private method `local$1` of the enclosing object
+As you can see, the local method `local` is compiled to a private method `local$1` of the enclosing object
 `Usage$package$`.
 
 So we can split our long method into smaller local methods:
@@ -145,11 +149,11 @@ We create a new Symbol for a mutable builder, then we create a `ValDef` to defin
 Fresh name generation is crucial here to avoid name clashes in the generated code.
 We create a reference to this builder with `Ref(symbol)`.
 `additions` is a list of terms, each representing a local method that adds an element to the builder. We don't have to
-concern about the method names since they are local and will be compiled to unique private methods.
-Finally, we create a `Block` that contains the variable definition, all the addition methods, and the final result
+worry about the method names since they are local and will be compiled to unique private methods.
+We then create a `Block` that contains the variable definition, all the addition methods, and the final result
 retrieval. Finally, we convert this block to an expression of type `Seq[T]`.
 
-Generated code looks like this:
+The generated code looks like this:
 
 ```scala
 def usage = {
@@ -239,3 +243,6 @@ public final class Usage$package$ implements Serializable {
     }
 }
 ```
+
+Back to working on my thesis now. We'll see if I find time to write something here again.
+Written by me, with AI reviewing my English.
