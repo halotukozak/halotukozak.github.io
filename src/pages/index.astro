@@ -1,128 +1,76 @@
 ---
-import BaseLayout from '../layouts/BaseLayout.astro';
-import Header from '../components/Header.astro';
-import Footer from '../components/Footer.astro';
-import { getCollection } from 'astro:content';
-import FormattedDate from '../components/FormattedDate.astro';
+import Layout from '~/layouts/Layout.astro'
+import { getSortedPosts } from '~/utils'
+import { getCollection, render } from 'astro:content'
+import PostPreview from '~/components/PostPreview.astro'
+import Pagination from '~/components/Pagination.astro'
+import BlockHeader from '~/components/BlockHeader.astro'
+import HomeBanner from '~/components/HomeBanner.astro'
+import siteConfig from '~/site.config'
+import TagsSection from '~/components/TagsSection.astro'
+import SeriesSection from '~/components/SeriesSection.astro'
 
-const posts = (await getCollection('blog')).sort(
-	(a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf()
-);
+const home = await getCollection('home')
+let HomeContent
+let homeAvatarImage
+let homeGithubCalendar
+if (home.length > 0) {
+  const homeEntry = home[0]
+  const { Content } = await render(homeEntry)
+  HomeContent = Content
+  homeAvatarImage = homeEntry.data.avatarImage
+  homeGithubCalendar = homeEntry.data.githubCalendar
+}
+const sortedPosts = await getSortedPosts()
+const postsHaveTags = sortedPosts.some(
+  (post) => post.data.tags && post.data.tags.length > 0,
+)
+
+const postsHaveSeries = sortedPosts.some((post) => post.data.series)
 ---
 
-<BaseLayout 
-	title="halotukozak - Portfolio & Blog"
-	description="Welcome to my portfolio and blog about technology, programming, and MultiTerm development."
->
-	<Header />
-	<main>
-		<section class="hero">
-			<h1>Welcome to <span class="text-gradient">halotukozak</span></h1>
-			<p>
-				Hi! I'm a developer passionate about creating innovative solutions.
-				This is my portfolio and blog where I share my journey in technology,
-				programming, and MultiTerm development.
-			</p>
-		</section>
+<Layout>
+  {
+    HomeContent && (
+      <HomeBanner avatarImage={homeAvatarImage} githubCalendar={homeGithubCalendar}>
+        <HomeContent />
+      </HomeBanner>
+    )
+  }
+  {
+    postsHaveSeries && (
+      <section>
+        <BlockHeader>Series</BlockHeader>
+        <SeriesSection posts={sortedPosts} />
+      </section>
+    )
+  }
+  {
+    postsHaveTags && (
+      <section>
+        <BlockHeader>Tags</BlockHeader>
+        <TagsSection posts={sortedPosts} />
+      </section>
+    )
+  }
+  {
+    sortedPosts.length > 0 && (
+      <section>
+        <BlockHeader>Latest Posts</BlockHeader>
+        {sortedPosts
+          .reverse()
+          .slice(0, Math.floor(siteConfig.pageSize / 2))
+          .map((post) => (
+            <PostPreview post={post} />
+          ))}
+        <Pagination nextLink="/posts" nextText="Archive" />
+      </section>
+    )
+  }
+</Layout>
 
-		<section>
-			<h2>Latest Blog Posts</h2>
-			<ul>
-				{
-					posts.map((post) => (
-						<li>
-							<a href={`/blog/${post.slug}/`}>
-								<img width={720} height={360} src={post.data.heroImage} alt="" />
-								<h4 class="title">{post.data.title}</h4>
-								<p class="date">
-									<FormattedDate date={post.data.pubDate} />
-								</p>
-							</a>
-						</li>
-					))
-				}
-			</ul>
-		</section>
-	</main>
-	<Footer />
-</BaseLayout>
-
-<style>
-	main {
-		width: 960px;
-	}
-	.hero {
-		padding: 3em 0;
-		text-align: center;
-	}
-	.text-gradient {
-		background: linear-gradient(45deg, var(--accent), var(--accent-dark));
-		-webkit-background-clip: text;
-		-webkit-text-fill-color: transparent;
-		background-clip: text;
-	}
-	ul {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 2rem;
-		list-style-type: none;
-		margin: 0;
-		padding: 0;
-	}
-	ul li {
-		width: calc(50% - 1rem);
-	}
-	ul li * {
-		text-decoration: none;
-		transition: 0.2s ease;
-	}
-	ul li:first-child {
-		width: 100%;
-		margin-bottom: 1rem;
-		text-align: center;
-	}
-	ul li:first-child img {
-		width: 100%;
-	}
-	ul li:first-child .title {
-		font-size: 2.369rem;
-	}
-	ul li img {
-		margin-bottom: 0.5rem;
-		border-radius: 12px;
-	}
-	ul li a {
-		display: block;
-	}
-	.title {
-		margin: 0;
-		color: rgb(var(--black));
-		line-height: 1;
-	}
-	.date {
-		margin: 0;
-		color: rgb(var(--gray));
-	}
-	ul li a:hover h4,
-	ul li a:hover .date {
-		color: var(--accent);
-	}
-	ul a:hover img {
-		box-shadow: var(--box-shadow);
-	}
-	@media (max-width: 720px) {
-		ul {
-			gap: 0.5em;
-		}
-		ul li {
-			width: 100%;
-			text-align: center;
-		}
-		ul li:first-child {
-			margin-bottom: 0;
-		}
-		ul li:first-child .title {
-			font-size: 1.563em;
-		}
-	}
+<style is:global>
+  a.heading-anchor {
+    display: none !important;
+  }
 </style>
