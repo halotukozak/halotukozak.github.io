@@ -23,8 +23,5 @@
   "devDependencies": {
     "@astrojs/check": "^0.9.5",
     "typescript": "^5.9.3"
-  },
-  "optionalDependencies": {
-    "prettier": "^3.6.2"
   }
 }
