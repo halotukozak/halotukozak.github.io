@@ -102,9 +102,9 @@ const config: SiteConfig = {
     // If you don't want to use Giscus, set this to undefined.
     giscus: {
         repo: 'halotukozak/halotukozak.github.io',
-        repoId: 'R_kgDOPNnBig',
+        repoId: 'R_kgDOQLddvg',
         category: 'Giscus',
-        categoryId: 'DIC_kwDOPNnBis4CteOc',
+        categoryId: 'DIC_kwDOQLddvs4CxOEV',
         reactionsEnabled: true, // Enable reactions on post itself
     },
     // These are characters available for the character chat feature.
