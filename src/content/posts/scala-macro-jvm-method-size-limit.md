@@ -262,6 +262,7 @@ public final class Usage$package$ implements Serializable {
 ## Case closed
 
 Back to working on my thesis now. We'll see if I find time to write something here again.
-Written by me[^*].
+
+Written by me[^*], no AI.
 
 [^*]: The English text and grammar were kindly reviewed and corrected by my friend Mateusz.
