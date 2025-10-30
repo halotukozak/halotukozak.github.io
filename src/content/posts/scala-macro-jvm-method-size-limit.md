@@ -10,13 +10,14 @@ toc: true
 
 ## It's so big
 
-While working on my BSc thesis, I encountered a cryptic Scala compilation error: "method too large." I use macros to
-generate code, I mean, a lot of code! You can think of some derivation or routing REST API generation, etc.
+While working on my BSc thesis, I encountered a cryptic Scala compilation error: "method too large". I use macros to
+generate code, and I mean, a lot of code! Think derivations, routing REST API generation or SQL queries.
 
 ## What's going on?
 
-We're gonna simplify this problem to such a long list generation, but in real case, the list creation cannot be replaced
-with a simple loop since the elements are not predictable.
+To simplify the example, let’s reduce it to generating a long list. In a real case, though, the list creation can't be
+replaced
+with a simple loop, because the elements aren't predictable.
 
 ```scala
 import scala.quoted.*
@@ -32,19 +33,20 @@ def someMacroImpl[T: Type](n: Expr[Int], elem: Expr[T])(using Quotes): Expr[Seq[
 def usage = someMacro(100000, 42) // List(42, 42, 42, ..., 42)
 ```
 
-I assume you have some familiarity with macros in Scala [this](https://softwaremill.com/scala-3-macros-tips-and-tricks/)
-article can be helpful. But tl;dr, I generate a long list of repeated elements at compile time and then inject it into
+I assume you have some familiarity with macros in
+Scala [this Software Mill article](https://softwaremill.com/scala-3-macros-tips-and-tricks/) can be helpful.
+I use them to generate a long list of repeated elements at compile time and then inject it into
 the code.
 
 Quick recap:
 
-- `inline def` - Marks this as an inline method that will be expanded at compile time
-- `${ ... }` - Splice syntax that invokes the macro implementation
-- `'{ n }` and `'{ elem }` - Quote syntax that converts values into `Expr[T]` representations
-- `Quotes` parameter - Provides the context for macro expansion
-- `Expr.ofSeq` - Converts a sequence of expressions into an expression representing a sequence
+- `inline` marks the method as an inline one that will be expanded at compile time
+- Splice syntax `${ ... }` that invokes the macro implementation
+- Quote syntax `'{ n }` and `'{ elem }` that converts values into `Expr[T]` representations
+- `Quotes` parameter provides the context for macro expansion
+- `Expr.ofSeq` converts a sequence of expressions into an expression representing a sequence
 
-When I try to compile this code, I get the following error, which is not very verbose.
+When I try to compile this code, I get a not-too-verbose error:
 
 ```text
 Error while emitting Usage$package$
@@ -57,7 +59,7 @@ limitation?
 
 ## Local methods translation
 
-JVM does not support local methods directly, so Scala finds a way to compile them. Let's see how. Consider the following
+JVM doesn't support local methods directly, so Scala finds a way to compile them. Let's see how. Consider the following
 Scala code:
 
 ```scala
@@ -68,7 +70,7 @@ def sth() = {
 }
 ```
 
-is compiled to
+which is compiled to:
 
 ```java
 //decompiled from Usage$package.class
@@ -112,7 +114,8 @@ As you can see, the local method `local` is compiled to a private method `local$
 
 ## The chunking solution
 
-The story goes that nine women won't give birth in a month, but since we cannot generate a large method, we can split it
+The story goes that nine women can't have a baby in a month. In our case, we can't generate a large method, but we can
+split it
 into smaller methods.
 
 ```scala
@@ -152,14 +155,20 @@ def someMacroImpl2[T: Type](n: Expr[Int], elem: Expr[T])(using quotes: Quotes): 
 }
 ```
 
-The entry point is much the same, but in the implementation, we use `quotes.reflect.*` to build the AST manually.
+The entry point is much the same, but in the implementation, we use`quotes.reflect.*` to build the AST manually.
+
 We create a new Symbol for a mutable builder, then we create a `ValDef` to define this builder variable.
 Fresh name generation is crucial here to avoid name clashes in the generated code.
+
 We create a reference to this builder with `Ref(symbol)`.
+
 `additions` is a list of terms, each representing a local method that adds an element to the builder. We don't have to
 worry about the method names since they are local and will be compiled to unique private methods.
+
 We then create a `Block` that contains the variable definition, all the addition methods, and the final result
-retrieval. Finally, we convert this block to an expression of type `Seq[T]`.
+retrieval.
+
+Finally, we convert this block to an expression of type `Seq[T]`.
 
 The generated code looks like this:
 
@@ -191,7 +200,7 @@ def usage = {
 }
 ```
 
-and decompiled to Java:
+And decompiled to Java:
 
 ```java
 //
@@ -250,7 +259,9 @@ public final class Usage$package$ implements Serializable {
 
 ```
 
-## Case Closed
+## Case closed
 
 Back to working on my thesis now. We'll see if I find time to write something here again.
-Written by me, with AI reviewing my English.
+Written by me[*].
+
+[*] The English text and grammar were kindly reviewed and corrected by my friend Mateusz.
