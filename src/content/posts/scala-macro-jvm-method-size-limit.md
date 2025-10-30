@@ -34,7 +34,7 @@ def usage = someMacro(100000, 42) // List(42, 42, 42, ..., 42)
 ```
 
 I assume you have some familiarity with macros in
-Scala [this Software Mill article](https://softwaremill.com/scala-3-macros-tips-and-tricks/) can be helpful.
+Scala, otherwise [this Software Mill article](https://softwaremill.com/scala-3-macros-tips-and-tricks/) can be helpful.
 I use them to generate a long list of repeated elements at compile time and then inject it into
 the code.
 
