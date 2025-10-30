@@ -8,9 +8,15 @@ toc: true
 
 # Scala 3 macro vs JVM method size limit
 
+## It's so big
+
 While working on my BSc thesis, I encountered a cryptic Scala compilation error: "method too large." I use macros to
-generate code, I mean, a lot of code! We're gonna simplify this problem to such a long list generation, but in real
-case, the list creation cannot be replaced with a simple loop since the elements are not predictable. You can think of some derivation or routing REST API generation, etc.
+generate code, I mean, a lot of code! You can think of some derivation or routing REST API generation, etc.
+
+## What's going on?
+
+We're gonna simplify this problem to such a long list generation, but in real case, the list creation cannot be replaced
+with a simple loop since the elements are not predictable.
 
 ```scala
 import scala.quoted.*
@@ -26,12 +32,9 @@ def someMacroImpl[T: Type](n: Expr[Int], elem: Expr[T])(using Quotes): Expr[Seq[
 def usage = someMacro(100000, 42) // List(42, 42, 42, ..., 42)
 ```
 
-I assume you have some familiarity with macros in Scala
-
-3. [this](https://softwaremill.com/scala-3-macros-tips-and-tricks/)
-   article can be helpful. But tl;dr, I generate a long list of repeated elements at compile time and then inject it
-   into
-   the code.
+I assume you have some familiarity with macros in Scala [this](https://softwaremill.com/scala-3-macros-tips-and-tricks/)
+article can be helpful. But tl;dr, I generate a long list of repeated elements at compile time and then inject it into
+the code.
 
 Quick recap:
 
@@ -51,9 +54,11 @@ one error found
 
 This error occurs when a single method exceeds the JVM's limit of 64KB of bytecode. But how can we bypass this
 limitation?
-Since we cannot generate a large method, we can split it into smaller methods.
 
-You need to understand how Scala translates local methods.
+## Local methods translation
+
+JVM does not support local methods directly, so Scala finds a way to compile them. Let's see how. Consider the following
+Scala code:
 
 ```scala
 def sth() = {
@@ -78,7 +83,7 @@ public final class Usage$package {
 
 //decompiled from Usage$package$.class
 import java.io.Serializable;
-import scala.Predef.;
+import scala.Predef .;
 import scala.runtime.ModuleSerializationProxy;
 import scala.runtime.Nothing;
 
@@ -105,7 +110,10 @@ public final class Usage$package$ implements Serializable {
 As you can see, the local method `local` is compiled to a private method `local$1` of the enclosing object
 `Usage$package$`.
 
-So we can split our long method into smaller local methods:
+## The chunking solution
+
+The story goes that nine women won't give birth in a month, but since we cannot generate a large method, we can split it
+into smaller methods.
 
 ```scala
 inline def someMacro2[T](inline n: Int, elem: T): Seq[T] =
@@ -121,7 +129,7 @@ def someMacroImpl2[T: Type](n: Expr[Int], elem: Expr[T])(using quotes: Quotes): 
     Symbol.spliceOwner,
     Symbol.freshName("builder"),
     TypeRepr.of[mutable.Builder[T, Seq[T]]],
-    Flags.Mutable,
+    Flags.Synthetic,
     Symbol.noSymbol,
   )
 
@@ -157,7 +165,7 @@ The generated code looks like this:
 
 ```scala
 def usage = {
-  var builder$macro$1: scala.collection.mutable.Builder[scala.Int, scala.collection.immutable.Seq[scala.Int]] = scala.Seq.newBuilder[scala.Int]
+  val builder$macro$1: scala.collection.mutable.Builder[scala.Int, scala.collection.immutable.Seq[scala.Int]] = scala.Seq.newBuilder[scala.Int]
 
   def avoidTooLargerMethod(): scala.Unit = {
     builder$macro$1.+=(42)
@@ -194,11 +202,10 @@ and decompiled to Java:
 //decompiled from Usage$package.class
 
 import scala.collection.immutable.Seq;
-import scala.runtime.Nothing;
 
 public final class Usage$package {
-    public static Seq<Object> x() {
-        return Usage$package$.MODULE$.x();
+    public static Seq<Object> usage() {
+        return Usage$package$.MODULE$.usage();
     }
 }
 
@@ -209,8 +216,6 @@ import scala.collection.mutable.Builder;
 import scala.package.;
 import scala.runtime.BoxesRunTime;
 import scala.runtime.ModuleSerializationProxy;
-import scala.runtime.Nothing;
-import scala.runtime.ObjectRef;
 
 public final class Usage$package$ implements Serializable {
     public static final Usage$package$ MODULE$ = new Usage$package$();
@@ -222,27 +227,30 @@ public final class Usage$package$ implements Serializable {
         return new ModuleSerializationProxy(Usage$package$.class);
     }
 
-    public Seq<Object> x() {
-        ObjectRef builder$macro$1 = ObjectRef.create(.MODULE$.Seq().newBuilder());
-        this.avoidTooLargerMethod$1(builder$macro$1);
-        this.avoidTooLargerMethod$2(builder$macro$1);
-        this.avoidTooLargerMethod$3(builder$macro$1);
-        return (Seq) ((Builder) builder$macro$1.elem).result();
+    public Seq<Object> usage() {
+        Builder var1 = .MODULE$.Seq().newBuilder();
+        this.avoidTooLargerMethod$1(var1);
+        this.avoidTooLargerMethod$2(var1);
+        this.avoidTooLargerMethod$3(var1);
+        return (Seq) var1.result();
     }
 
-    private final void avoidTooLargerMethod$1(final ObjectRef builder$macro$1$1) {
-        ((Builder) builder$macro$1$1.elem).$plus$eq(BoxesRunTime.boxToInteger(42));
+    private final void avoidTooLargerMethod$1(final Builder builder$macro$1$1) {
+        builder$macro$1$1.$plus$eq(BoxesRunTime.boxToInteger(42));
     }
 
-    private final void avoidTooLargerMethod$2(final ObjectRef builder$macro$1$2) {
-        ((Builder) builder$macro$1$2.elem).$plus$eq(BoxesRunTime.boxToInteger(42));
+    private final void avoidTooLargerMethod$2(final Builder builder$macro$1$2) {
+        builder$macro$1$2.$plus$eq(BoxesRunTime.boxToInteger(42));
     }
 
-    private final void avoidTooLargerMethod$3(final ObjectRef builder$macro$1$3) {
-        ((Builder) builder$macro$1$3.elem).$plus$eq(BoxesRunTime.boxToInteger(42));
+    private final void avoidTooLargerMethod$3(final Builder builder$macro$1$3) {
+        builder$macro$1$3.$plus$eq(BoxesRunTime.boxToInteger(42));
     }
 }
+
 ```
+
+## Case Closed
 
 Back to working on my thesis now. We'll see if I find time to write something here again.
 Written by me, with AI reviewing my English.
