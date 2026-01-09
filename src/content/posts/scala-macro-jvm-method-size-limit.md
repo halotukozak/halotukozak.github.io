@@ -19,19 +19,20 @@ To simplify the example, let’s reduce it to generating a long list. In a real 
 replaced
 with a simple loop, because the elements aren't predictable.
 
+[//]: // @formatter:off
 ```scala
 import scala.quoted.*
 
 inline def someMacro[T](inline n: Int, elem: T): Seq[T] =
   ${ someMacroImpl[T]('{ n }, '{ elem }) }
 
-def someMacroImpl[T: Type](n: Expr[Int], elem: Expr[T])(using Quotes): Expr[Seq[T]] = {
+def someMacroImpl[T: Type](n: Expr[Int], elem: Expr[T])(using Quotes): Expr[Seq[T]] = 
   val longList = Seq.fill(n.valueOrAbort)(elem)
   Expr.ofSeq(longList)
-}
 
 def usage = someMacro(100000, 42) // List(42, 42, 42, ..., 42)
 ```
+[//]: // @formatter:on
 
 I assume you have some familiarity with macros in
 Scala, otherwise [this Software Mill article](https://softwaremill.com/scala-3-macros-tips-and-tricks/) can be helpful.
@@ -62,16 +63,18 @@ limitation?
 JVM doesn't support local methods directly, so Scala finds a way to compile them. Let's see how. Consider the following
 Scala code:
 
+[//]: // @formatter:off
 ```scala
-def sth() = {
+def sth() = 
   def local() = ???
 
   local()
-}
 ```
+[//]: // @formatter:on
 
 which is compiled to:
 
+[//]: // @formatter:off
 ```java
 //decompiled from Usage$package.class
 
@@ -108,6 +111,7 @@ public final class Usage$package$ implements Serializable {
     }
 }
 ```
+[//]: // @formatter:on
 
 As you can see, the local method `local` is compiled to a private method `local$1` of the enclosing object
 `Usage$package$`.
@@ -118,11 +122,12 @@ The story goes that nine women can't have a baby in a month. In our case, we can
 split it
 into smaller methods.
 
+[//]: // @formatter:off
 ```scala
 inline def someMacro2[T](inline n: Int, elem: T): Seq[T] =
   ${ someMacroImpl2[T]('{ n }, '{ elem }) }
 
-def someMacroImpl2[T: Type](n: Expr[Int], elem: Expr[T])(using quotes: Quotes): Expr[Seq[T]] = {
+def someMacroImpl2[T: Type](n: Expr[Int], elem: Expr[T])(using quotes: Quotes): Expr[Seq[T]] = 
   import quotes.reflect.*
   import scala.collection.mutable
 
@@ -152,8 +157,8 @@ def someMacroImpl2[T: Type](n: Expr[Int], elem: Expr[T])(using quotes: Quotes): 
   val result = '{ $builder.result() }.asTerm
 
   Block(valDef :: additions, result).asExprOf[Seq[T]]
-}
 ```
+[//]: // @formatter:on
 
 The entry point is much the same, but in the implementation, we use`quotes.reflect.*` to build the AST manually.
 
@@ -172,6 +177,7 @@ Finally, we convert this block to an expression of type `Seq[T]`.
 
 The generated code looks like this:
 
+[//]: // @formatter:off
 ```scala
 def usage = {
   val builder$macro$1: scala.collection.mutable.Builder[scala.Int, scala.collection.immutable.Seq[scala.Int]] = scala.Seq.newBuilder[scala.Int]
@@ -199,9 +205,11 @@ def usage = {
   builder$macro$1.result()
 }
 ```
+[//]: // @formatter:on
 
 And decompiled to Java:
 
+[//]: // @formatter:off
 ```java
 //
 // Source code recreated by IntelliJ IDEA
@@ -258,6 +266,7 @@ public final class Usage$package$ implements Serializable {
 }
 
 ```
+[//]: // @formatter:on
 
 ## Case closed
 
