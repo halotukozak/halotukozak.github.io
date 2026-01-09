@@ -1,7 +1,7 @@
 ---
 title: 'Access Scala Method Defaults'
 published: not yet
-draft: true
+draft: false
 tags: [ 'scala', 'macro' ]
 toc: true
 ---
