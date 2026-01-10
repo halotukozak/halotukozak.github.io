@@ -1,7 +1,7 @@
 ---
 title: 'Access Scala Method Defaults'
 published: 2026-01-10
-draft: false
+draft: true
 tags: [ 'scala', 'macro' ]
 toc: true
 ---
