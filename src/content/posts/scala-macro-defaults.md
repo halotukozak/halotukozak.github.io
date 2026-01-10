@@ -39,6 +39,7 @@ def method(x: Int = 10, y: String = "two") = ???
 
 ## Prerequisites
 
+With this goal in mind, let's ensure you have the right background knowledge before diving into the implementation.
 I assume you're comfortable with Scala and have some familiarity with Scala 3 macros. If you need a refresher on Scala 3
 macros, I recommend [this Software Mill article](https://softwaremill.com/scala-3-macros-tips-and-tricks/) first.
 
@@ -58,7 +59,7 @@ So `def method(x: Int = 10, y: String = "two") = ???` actually creates:
 // Source code recreated by IntelliJ IDEA
 // (powered by FernFlower decompiler)
 //
-//decompiled from main$package$.class
+// decompiled from main$package$.class
 import java.io.Serializable;
 import scala.runtime.Nothing;
 import scala.runtime.Scala3RunTime.;
@@ -81,16 +82,18 @@ public final class main$package$ implements Serializable {
 ```
 [//]: # (@formatter:on)
 
-Scala compiler on call site generates calls to these `$default$N` methods when parameters are omitted.
+Scala compiler on call site generates calls to these `$default$N` methods when parameters are omitted. Understanding
+this encoding is crucial because our macro will hunt for these hidden `$default$N` methods. With that foundation, let's
+build the first version.
 
 ## Step 1: Simple Version (Map-Based)
 
 Let's move to the code. We will use the `quotes.reflect` to look under the hood of the method definition at compile
 time. Our macro does three things:
 
-1. Extracts the symbol of method we're analyzing
-2. Find all generated `$default$N` methods.
-3. Builds a map connecting parameter names to their default values
+1. extracts the symbol of method we're analyzing,
+2. finds all generated `$default$N` methods,
+3. builds a map connecting parameter names to their default values.
 
 Here's the code with detailed comments:
 
@@ -114,9 +117,9 @@ def defaultsImpl[T: Type](expr: Expr[T])(using quotes: Quotes): Expr[Map[String,
   
   // Collect all parameter names in order
   val paramNames = methodSymbol.paramSymss // "parameter symbol sequences" (handles grouped parameters)
-    .flatten                               //combine all groups into one list
-    .map(_.name)                           //extract just the names
-    .toVector                              //convert to Vector for indexed access (we need positions later)
+    .flatten                               // combine all groups into one list
+    .map(_.name)                           // extract just the names
+    .toVector                              // convert to Vector for indexed access (we need positions later)
   
   // Build the prefix for hidden default methods
   val prefix = methodSymbol.name + "$default$"
@@ -137,6 +140,8 @@ def defaultsImpl[T: Type](expr: Expr[T])(using quotes: Quotes): Expr[Map[String,
   '{ ${ Varargs(defaults) }.toMap }
 ```
 [//]: # (@formatter:on)
+
+This macro successfully extracts defaults into a Map. Let's see it in action:
 
 ### Testing the First Version
 
@@ -162,7 +167,9 @@ is always `Any`.
 
 ## Step 2: Type-Safe Version with Computed Field Names
 
-### What is `Selectable`?
+To solve these issues, we'll use two powerful Scala 3 features: `Selectable` and `Computed Field Names`.
+
+### What is Selectable?
 
 `Selectable` is a trait that enables dynamic access to the refined fields.
 The `selectDynamic` method takes a field name and returns the value associated with that name.
@@ -191,8 +198,10 @@ This solution is type-safe because the compiler knows the types of `x` and `y` a
 import implicit conversion that turns a value into a `Selectable` such that structural selections are performed on that
 value.
 
-### What are `Computed Field Names`?
+### What are Computed Field Names?
 
+This basic Selectable gives us dynamic access, but lacks type safety. That's where computed field names come in. They
+let us encode field types at compile-time.
 The `Selectable` trait now can have a `Fields` type member that can be instantiated to a named tuple.
 
 ```scala
@@ -220,6 +229,9 @@ val y: String = d.y   // works
 // val z = d.z        // compile error: no z field
 ```
 [//]: # (@formatter:on)
+
+With `Selectable` and `Computed Field Names` understood, let's enhance our macro to automatically generate the `Fields`
+type for any method's defaults.
 
 ## The Type-Safe Implementation
 
@@ -313,7 +325,9 @@ sealed class DefaultsExtractor(defaults: Map[String, Any]) extends Selectable:
 ```
 [//]: # (@formatter:on)
 
-### Why `transparent inline def`?
+This code works because of a crucial detail: the `transparent` keyword.
+
+### Why transparent inline def?
 
 The `transparent` keyword means the inline function doesn't create a type boundary. Type refinements (the
 `type Fields = ...` part) flow through to the caller's context. Without it, the detailed field information would be
