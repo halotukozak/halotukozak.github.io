@@ -1,5 +1,5 @@
 ---
-title: 'Access Scala Method Defaults'
+title: 'Type-Safe Access to Method Parameter Defaults in Scala'
 published: 2026-01-10
 draft: true
 tags: [ 'scala', 'macro' ]
@@ -24,9 +24,6 @@ case class Database(host: String = "localhost", port: Int = 5432, name: String =
 // "name" (default: mydb)
 ```
 
-The JVM doesn't natively store default parameters in method signatures at runtime. Scala has a trick—it generates hidden
-methods—but you can't access them without macros.
-
 We'd like to pass a method reference and get back a `Map[String, Any]` containing all parameter defaults.
 
 ```scala
@@ -47,7 +44,7 @@ I use Scala 3.8.0-RC4 for this example.
 
 ## How Scala Encodes Defaults
 
-The JVM doesn't natively support default parameters. Scala gets creative. When you define a method with defaults, the
+Since the JVM doesn't natively support default parameters, Scala gets creative. When you define a method with defaults, the
 compiler generates companion methods in the class for each defaulted parameter. These methods are named with a special
 encoding: `$default$N,` where `N` is the parameter position (1-indexed).
 
