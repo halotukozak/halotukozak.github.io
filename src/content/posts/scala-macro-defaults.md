@@ -1,7 +1,7 @@
 ---
 title: 'Type-Safe Access to Method Parameter Defaults in Scala'
 published: 2026-01-10
-draft: true
+draft: false
 tags: [ 'scala', 'macro' ]
 toc: true
 ---
