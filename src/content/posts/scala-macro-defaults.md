@@ -11,8 +11,7 @@ toc: true
 Someone [asked on the Scala contributors forum](https://contributors.scala-lang.org/t/how-to-avoid-repeating-method-parameter-defaults/7330)
 how to access method parameter defaults.
 
-Default parameters are convenient syntax sugar—but sometimes you need to access them programmatically. Imagine you're
-building a configuration builder and want to include the default values in help
+Default parameters are convenient syntax sugar, but sometimes you need to access them programmatically. Imagine you're building a configuration builder and want to include the default values in help
 text:
 
 ```scala
@@ -36,21 +35,18 @@ def method(x: Int = 10, y: String = "two") = ???
 
 ## Prerequisites
 
-With this goal in mind, let's ensure you have the right background knowledge before diving into the implementation.
-I assume you're comfortable with Scala and have some familiarity with Scala 3 macros. If you need a refresher on Scala 3
-macros, I recommend [this Software Mill article](https://softwaremill.com/scala-3-macros-tips-and-tricks/) first.
+With this goal in mind, let's ensure you have the right background knowledge before diving into the implementation. I assume you're comfortable with Scala and have some familiarity with Scala 3 macros. If you need a refresher on Scala 3 macros, I recommend [this Software Mill article](https://softwaremill.com/scala-3-macros-tips-and-tricks/) first.
 
 I use Scala 3.8.0-RC4 for this example.
 
 ## How Scala Encodes Defaults
 
-Since the JVM doesn't natively support default parameters, Scala gets creative. When you define a method with defaults, the
-compiler generates companion methods in the class for each defaulted parameter. These methods are named with a special
-encoding: `$default$N,` where `N` is the parameter position (1-indexed).
+Since the JVM doesn't natively support default parameters, Scala gets creative. When you define a method with defaults, the compiler generates companion methods in the class for each defaulted parameter. These methods are named with a special encoding: `$default$N,` where `N` is the parameter position (1-indexed).
 
 So `def method(x: Int = 10, y: String = "two") = ???` actually creates:
 
 [//]: # (@formatter:off)
+
 ```java
 //
 // Source code recreated by IntelliJ IDEA
@@ -77,6 +73,7 @@ public final class main$package$ implements Serializable {
     }
 }
 ```
+
 [//]: # (@formatter:on)
 
 Scala compiler on call site generates calls to these `$default$N` methods when parameters are omitted. Understanding
@@ -95,6 +92,7 @@ time. Our macro does three things:
 Here's the code with detailed comments:
 
 [//]: # (@formatter:off)
+
 ```scala
 inline def defaults[T](inline fun: T): Map[String, Any] = ${ defaultsImpl('{ fun }) }
 
@@ -136,6 +134,7 @@ def defaultsImpl[T: Type](expr: Expr[T])(using quotes: Quotes): Expr[Map[String,
   // Varargs(...) converts List[Expr[T]] to Expr[List[T]]
   '{ ${ Varargs(defaults) }.toMap }
 ```
+
 [//]: # (@formatter:on)
 
 This macro successfully extracts defaults into a Map. Let's see it in action:
@@ -143,6 +142,7 @@ This macro successfully extracts defaults into a Map. Let's see it in action:
 ### Testing the First Version
 
 [//]: # (@formatter:off)
+
 ```scala
 def greet(name: String = "samsepi0l", number: Int = 43) = s"$greeting $number"
 
@@ -155,6 +155,7 @@ def main(): Unit =
   val name = d("name")
   val number: Int = d("number").asInstanceOf[Int] // type is Any, must cast
 ```
+
 [//]: # (@formatter:on)
 
 ## Why We Need Better: Type-Safety
@@ -172,6 +173,7 @@ To solve these issues, we'll use two powerful Scala 3 features: `Selectable` and
 The `selectDynamic` method takes a field name and returns the value associated with that name.
 
 [//]: # (@formatter:off)
+
 ```scala
 class DynamicConfig extends Selectable:
   val x = 10
@@ -189,6 +191,7 @@ val x: Int = d.x    // works
 val y: String = d.y // works
 val z = d.z         // compile error: no z field
 ```
+
 [//]: # (@formatter:on)
 
 This solution is type-safe because the compiler knows the types of `x` and `y` at compile time, but it requires us to
@@ -212,6 +215,7 @@ instance will have fields `x` of
 type `Int` and `y` of type `String`.
 
 [//]: # (@formatter:off)
+
 ```scala
 class DynamicConfig extends Selectable:
   type Fields = (x: Int, y: String)
@@ -225,6 +229,7 @@ val x: Int = d.x      // works
 val y: String = d.y   // works
 // val z = d.z        // compile error: no z field
 ```
+
 [//]: # (@formatter:on)
 
 With `Selectable` and `Computed Field Names` understood, let's enhance our macro to automatically generate the `Fields`
@@ -240,6 +245,7 @@ Example: for `method(x: Int = 10, y: String = "hi")` names should become: `("x",
 The result should be `(x: Int, y: String)` (which is a syntax sugar for `NamedTuple[("x", "y"), (Int, String)]`).
 
 [//]: # (@formatter:off)
+
 ```scala
 import scala.NamedTuple.{AnyNamedTuple, NamedTuple}
 import scala.quoted.*
@@ -320,6 +326,7 @@ sealed class DefaultsExtractor(defaults: Map[String, Any]) extends Selectable:
   // where T is the type of "x" from the Fields type member
   final def selectDynamic(name: String): Any = defaults(name)
 ```
+
 [//]: # (@formatter:on)
 
 This code works because of a crucial detail: the `transparent` keyword.
