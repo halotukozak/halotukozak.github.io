@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: ['master']
 
+# Sets permissions of the GITHUB_TOKEN to read repository contents
+permissions:
+  contents: read
+
 env:
   BUILD_PATH: '.' # default value when not using subfolders
 
