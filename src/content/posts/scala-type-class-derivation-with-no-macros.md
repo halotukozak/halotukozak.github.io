@@ -13,18 +13,16 @@ serialization—take the `scala-commons` library's `GenCodec` as an example—yo
 API. We’re talking about roughly **1,200 lines of low-level code** just to handle the boilerplate of peering into class
 structures.
 
-With Scala 3, we can achieve the same (and more) using the `Mirror` API and `scala.compiletime` utilities. We still need
-a *tiny* bit of macro magic for annotations, but we can get 95% of the way there with standard code.
+With Scala 3, we can achieve the same (and more) using the `Mirror` API and `scala.compiletime` utilities. 
+We still need a *tiny* bit of macro magic for annotations, but we can get 95% of the way there with standard code.
 
 ## The Foundation: GenCodec
 
-We assume we already have a robust serialization API. Our goal isn't to write the serializer itself, but to automate its
-creation for complex types.
+We assume a robust serialization API already exists. Our goal isn't to write the serializer itself, but to automate instance creation for complex types.
 
 ```scala 3
 trait GenCodec[T]:
   def read(input: Input): T
-
   def write(output: Output, value: T): Unit
 
 object GenCodec:
@@ -52,17 +50,16 @@ object GenCodec:
     instances: Array[GenCodec[?]],
     fieldNames: Array[String],
   ): GenCodec[T] = ???
-
 ```
 
 ## The Power of Mirrors
 
-Scala 3 introduces `Mirror`, a type-level representation of a class's structure.
+Scala 3 introduces `Mirror`, a compile-time representation of a class's structure that lets us decompose types into their components.
 
-* **Mirror.ProductOf[T]**: For case classes and tuples.
-* **Mirror.SumOf[T]**: For enums and sealed traits.
+* **Mirror.ProductOf[T]**: For case classes (product types).
+* **Mirror.SumOf[T]**: For enums and sealed traits (sum types).
 
-Our first attempt at a `derived` method looks like this:
+Our first attempt at a `derived` method uses these mirrors to extract type information:
 
 ```scala 3
 inline private def derived[T]: GenCodec[T] = compiletime.summonFrom:
@@ -87,22 +84,23 @@ inline private def derived[T]: GenCodec[T] = compiletime.summonFrom:
 
 ### What's happening here?
 
-1. `compiletime.summonFrom`: A compile-time conditional that allows us to pattern match on givens. It will evaluate the
-   first case which given is available.
-2. `compiletime.constValue`: Extracts a literal value (like a class name) from a type level to the value level.
-3. `compiletime.constValueTuple`: Converts a tuple of types (like field labels) into a tuple of values.
-4. `Tuple.Map`: A type-level operation that transforms a tuple `(A, B)` into `(GenCodec[A], GenCodec[B])`.
+**compiletime.summonFrom** is a compile-time conditional that pattern matches on available givens. 
+It tries each case in order and uses the first one that works.
 
-> **Note:** You might wonder why we use `.toArray.map(_.asInstanceOf[GenCodec[?]])` instead of a direct cast. Because of
-> JVM type erasure and how generic arrays are handled, a direct cast to `Array[GenCodec[?]]` would fail at runtime. We
-> have to map over the elements to satisfy the compiler.
+**compiletime.constValue** extracts a literal value (like a String `"Node"`) from the type level to the value level. 
+At compile-time, `m.MirroredLabel` is a singleton type containing the class name as a string—`constValue` materializes it.
 
-[//]: # todo( brakuje mi więcej opisu kodu)
+**compiletime.constValueTuple** converts a tuple of types into a tuple of values. 
+For example, field labels (which exist as a tuple of singleton string types) become actual `String` values.
+
+**Tuple.Map** is a type-level operation that transforms a tuple of types. 
+If you have `(Int, String, Boolean)` and apply `Tuple.Map[..., GenCodec]`, you get `(GenCodec[Int], GenCodec[String], GenCodec[Boolean])`.
+
+> **Note on asInstanceOf**: We use `.toArray.map(_.asInstanceOf[GenCodec[?]])` instead of a direct cast to `.asInstanceOf[Array[GenCodec[?]]]`.
 
 ## Recursive Derivation
 
-The simple version works for structures where all subclasses and fields have existing `GenCodec` instances.
-But we don't want to require users to manually define codecs for every subtype, because can derive them recursively.
+The simple version works when all fields and subclasses already have `GenCodec` instances, but we want to derive GenCodecs for subclasses recursively.
 
 ```scala 3
 inline private def summonInstances[Elems <: Tuple](
@@ -115,13 +113,17 @@ inline private def summonInstances[Elems <: Tuple](
         case codec: GenCodec[`elem`] if summonAllowed => codec
         case _ if deriveAllowed => derived[elem]
 
-      (elemCodec *: summonInstances[elems](summonAllowed, deriveAllowed)).asInstanceOf[Tuple.Map[Elems, GenCodec]]
-    case _: EmptyTuple => EmptyTuple.asInstanceOf[Tuple.Map[Elems, GenCodec]]
+      elemCodec *: summonInstances[elems](summonAllowed, deriveAllowed)
+    case _: EmptyTuple => EmptyTuple
 ```
 
-* `compiletime.erasedValue`: Allows us to pattern match on the structure of a type without having a runtime value.
-* `inline match`: Ensures the logic is expanded and resolved at compile-time.
+**compiletime.erasedValue** lets us pattern match on a type without having a runtime value.
+It's a no-op at runtime but at compile-time tells the compiler "I know this type's structure."
 
+**inline match** ensures the pattern matching is fully expanded at compile-time. 
+Each case is either eliminated or evaluated before any code is generated.
+
+Now we update `derived` to use recursive summoning:
 
 ```scala 3
 inline private def derived[T]: GenCodec[T] = compiletime.summonFrom:
@@ -131,10 +133,10 @@ inline private def derived[T]: GenCodec[T] = compiletime.summonFrom:
 
       m match
         case m: Mirror.ProductOf[T] => 
-          val instances =summonInstances[m.MirroredElemTypes](summonAllowed = true, deriveAllowed = false).toArray.map(_.asInstanceOf[GenCodec[?]])
+          val instances = summonInstances[m.MirroredElemTypes](summonAllowed = true, deriveAllowed = false).toArray.map(_.asInstanceOf[GenCodec[?]])
           deriveProduct(typeName, instances, fieldNames)
         case m: Mirror.SumOf[T] =>
-          val instances =summonInstances[m.MirroredElemTypes](summonAllowed = true, deriveAllowed = true).toArray.map(_.asInstanceOf[GenCodec[?]])
+          val instances = summonInstances[m.MirroredElemTypes](summonAllowed = true, deriveAllowed = true).toArray.map(_.asInstanceOf[GenCodec[?]])
           val classes = compiletime
             .summonAll[Tuple.Map[m.MirroredElemTypes, ClassTag]]
             .toArray
@@ -144,10 +146,11 @@ inline private def derived[T]: GenCodec[T] = compiletime.summonFrom:
     case _ => compiletime.error("Cannot derive GenCodec")
 ```
 
+For product types, we only summon existing instances (no deriving); for sum types, we allow deriving subclasses recursively.
 ## Handling Cycles 
 
-Recursive data structures (like a `Node` pointing to another `Node`) will cause infinite recursion at compile-time. 
-To handle this, we use a `Deferred` wrapper to break the cycle.
+Recursive data structures (like a `Node` pointing to another `Node`) cause infinite recursion at compile-time.
+To break the cycle, we introduce a `Deferred` wrapper and place it in scope *before* deriving:
 
 ```scala 3
 final class Deferred[T] extends GenCodec[T]:
@@ -159,16 +162,16 @@ final class Deferred[T] extends GenCodec[T]:
 inline def derived[T]: GenCodec[T] =
   given deferred: Deferred[T] = new Deferred[T]
 
-  val underlying = unsafeDerived[T] // we call renamed our old 'derived'
+  val underlying = unsafeDerived[T] // our renamed old 'derived'
   deferred.underlying = underlying
   underlying
 ```
 
-[//]: # todo: - note we can firstly check cycles and only then create Deferred instances() but not now
+The `given Deferred[T]` makes the instance available during the derivation of `T` itself.
+When the compiler tries to derive `T`, it will first summon the `Deferred[T]` (breaking the recursion), then later fill in its `underlying` field with the complete instance.
+This pattern works because we use `var`—the instance can be mutated after creation.
 
 ## The "Almost" Part
-
-
 
 Sometimes we need more than what `Mirror` provides — like the actual name of a type or handling custom annotations like the one that changes serialization names.
 [//]: # (- we can derive not only for sum and product, but also for singleton
@@ -187,10 +190,9 @@ inline private def unsafeDerived[T]: GenCodec[T] = compiletime.summonFrom:
 [//]: # (todo: but how to get name?)
 
 ### Type Names via Opaque Types
+[//]: # (add into)
 
-[//]: # (into)
-
-We use an `opaque type` to carry the type name without the runtime overhead, resolved via a tiny macro.
+We use an opaque type to carry the type name without runtime overhead:
 
 ```scala 3
 opaque type TypeName[T] <: String = String
@@ -203,13 +205,16 @@ object TypeName:
     Expr(TypeRepr.of[T].show)
 ```
 
-### Handling Annotations
+This macro extracts the fully-qualified type name at compile-time and encodes it as a string literal.
+The `opaque type` ensures it's treated distinctly from `String` for type safety, but at runtime it's just a string.
 
 [//]: # (todo: gencodec library provides some annotation handling - we can do it too)
 [//]: # (explain that we want to have custom naming via @name annotation
 [//]: # (explain that we can use RefningAnnotation for that
 [//]: # (show code)
-To support custom naming via `@name`, we use `RefiningAnnotation` and a macro to check for its presence.
+### Handling Annotations
+
+We want to support custom naming via an `@name` annotation. To detect and extract it at compile-time, we use `RefiningAnnotation` and a small macro:
 
 ```scala 3
 class name(val value: String) extends scala.annotation.RefiningAnnotation
@@ -227,37 +232,48 @@ object HasAnnotation:
       case _ => report.errorAndAbort(s"${Type.show[T]} is not annotated with ${Type.show[A]}")
 ```
 
-By combining `HasAnnotation` with `summonFrom`, we can prioritize the annotated name over the default class name:
+If a type has the annotation, `HasAnnotation[T, A]` gives us the annotation object itself.
+If not, the macro aborts at compile-time with a clear error.
+
+By combining `HasAnnotation` with `summonFrom`, we can check for annotations and fall back to defaults:
 
 ```scala 3
 class name(val value: String) extends scala.annotation.RefiningAnnotation
 
 inline private def constName[T](inline fallback: String) = compiletime.summonFrom:
-  case h: HasAnnotation[tpe, `name`] => h.value
+  case h: HasAnnotation[T, `name`] => h.value
   case _ => fallback
-  
-  inline private def constNames[Tup <: Tuple]: Tuple = inline compiletime.erasedValue[Tup] match
+```
+
+The backticks around `name` are crucial—they tell the compiler to treat `name` as a type name, not a type binding.
+Without them, the compiler would think `name` is a variable in scope, leading to errors.
+
+For field names, we need to check each field's type separately:
+
+```scala 3
+inline private def constNames[Tup <: Tuple]: Tuple = inline compiletime.erasedValue[Tup] match
     case _: ((label, tpe) *: tail) =>
-      val head = constName(compiletime.constValue[label].asInstanceOf[String])
+      val head = constName[tpe](compiletime.constValue[label].asInstanceOf[String])
       head *: constNames[tail]
     case _: EmptyTuple => EmptyTuple
 ```
 
+We zip labels with types, then for each field, check if its type has a `@name` annotation. If yes, use that; otherwise use the label.
+
+Now integrate this into `unsafeDerived`:
+
 ```scala 3
 inline private def unsafeDerived[T]: GenCodec[T] = compiletime.summonFrom:
   case m: Mirror.Of[T] =>
-    val typeName = constName(compiletime.constValue[m.MirroredLabel])
+    val typeName = constName[T](compiletime.constValue[m.MirroredLabel])
     val fieldNames = constNames[Tuple.Zip[m.MirroredElemLabels, m.MirroredElemTypes]].toArray.map(_.asInstanceOf[String])
 
-   //.. as previous
+    // ... as before, using typeName and fieldNames
   case v: ValueOf[T] =>
-    val typeName = constName(compiletime.summonInline[TypeName[T]])
+    val typeName = constName[T](compiletime.summonInline[TypeName[T]])
     deriveSingleton(typeName, v.value)
   case _ => compiletime.error("Cannot derive GenCodec")
 ```
-
-[//]: # (tood: - note that name type is in backtics)
-[//]: # (tood: - explain scala.annotation.RefiningAnnotation)
 
 ## Summary
 
@@ -265,4 +281,4 @@ We've moved from 1,200 lines of complex reflection to a few dozen lines of type-
 we still use macros for annotation processing, the "heavy lifting" is now handled by the compiler's native understanding
 of types.
 
-[//]: # (pojutrze obrona inżynierki, wish me luck)
+I'm defencing my bachelor's thesis the day after tomorrow. Wish me luck!
