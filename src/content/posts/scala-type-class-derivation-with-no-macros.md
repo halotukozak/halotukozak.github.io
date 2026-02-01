@@ -209,10 +209,11 @@ inline private def unsafeDerived[T]: GenCodec[T] = compiletime.summonFrom:
 ### Handling Annotations
 
 Scala 2 `scala-commons `supported custom names via an `@name` annotation.
-We use Scala 3's `RefiningAnnotation` and a small macro to extract this metadata.
+We use Scala 3's `RefiningAnnotation` which are more "sticky" than normal ones. They are conceptually kept around when normal refinements would also not be stripped away.
+A small macro helps us check for the presence of an annotation at compile-time:
 
 ```scala 3
-class name(val value: String) extends StaticAnnotation
+class name(val value: String) extends RefiningAnnotation
 
 @implicitNotFound("${T} is not annotated with ${A}")
 opaque type HasAnnotation[T, A <: RefiningAnnotation] <: A = A
