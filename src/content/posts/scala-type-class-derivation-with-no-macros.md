@@ -8,8 +8,8 @@ toc: true
 ## Boilerplate in Type Class Instances
 
 In the Scala 2 era, type class derivation was often considered a "dark art."
-To automate serialization — take the `scala-commons` library's `GenCodec` as an example—one typically had to rely on the complex Reflection API or heavy-duty libraries like **Shapeless**.
-We’re talking about roughly **1,200 lines of low-level code** just to handle the boilerplate of peering into class structures and dealing with macro-heavy transformations.
+To automate serialization, take the `scala-commons` library's `GenCodec` as an example, one typically had to rely on the complex Reflection API or heavy-duty libraries like **Shapeless**.
+We’re talking about roughly **1,200 lines of low-level code** just to handle the boilerplate of peering into class structures and dealing with low-level macro transformations.
 
 With Scala 3, the landscape has changed significantly.
 We can achieve the same (and more) using the native `Mirror` API and `scala.compiletime` utilities.
@@ -85,11 +85,9 @@ inline private def derived[T]: GenCodec[T] = compiletime.summonFrom:
   case _ => compiletime.error("Cannot derive GenCodec")
 ```
 
-### What's happening here?
-
 **compiletime.summonFrom** is a compile-time conditional that pattern matches on available *givens* (implicits) in the current scope. It tries each case in order and uses the first one that successfully resolves. This is the heart of flexible derivation.
 
-**compiletime.constValue** extracts a literal value (like a String `"MR. ROBOT"`) from the type level to the value level. At compile-time, `m.MirroredLabel` is a **singleton type** containing the class name - `constValue` materializes it as a runtime `String`.
+**compiletime.constValue** extracts a literal value (like a String `"MR. ROBOT"`) from the type level to the value level. At compile-time, `m.MirroredLabel` is a **singleton type** containing the class name: `constValue` materializes it as a runtime `String`.
 
 **compiletime.constValueTuple** converts a tuple of types into a tuple of values. For example, field labels in a `Mirror` exist as a tuple of singleton string types like `("id", "name")`.
 
@@ -146,6 +144,7 @@ inline private def derived[T]: GenCodec[T] = compiletime.summonFrom:
 ```
 
 For product types, we only summon existing instances (no deriving); for sum types, we allow deriving subclasses recursively.
+
 ## Handling Cycles 
 
 Recursive data structures (like a `Node` pointing to another `Node`) cause infinite recursion at compile-time because the compiler tries to generate a `GenCodec[Node]` while it's still in the middle of generating a `GenCodec[Node]`.
@@ -277,4 +276,4 @@ We've moved from 1,200 lines of complex reflection to a few dozen lines of type-
 While we still use macros for annotation processing, the "heavy lifting" is now handled by the compiler's native understanding
 of types.
 
-I'm defencing my bachelor's thesis the day after tomorrow. I hope I won't stop blogging after that. If you enjoyed this post, consider following me on [LinkedIn](https://www.linkedin.com/in/halotukozak/) for updates on future content!
+I'm defending my bachelor's thesis the day after tomorrow. I hope I won't stop blogging after that. If you enjoyed this post, consider following me on [LinkedIn](https://www.linkedin.com/in/halotukozak/) for updates on future content!
