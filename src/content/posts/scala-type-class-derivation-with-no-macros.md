@@ -217,7 +217,7 @@ class name(val value: String) extends RefiningAnnotation
 opaque type HasAnnotation[T, A <: RefiningAnnotation] = A
 
 object HasAnnotation:
-  extension[A](has: HasAnnotation[?, A]) def value: A = has
+  extension [T, A <: RefiningAnnotation](has: HasAnnotation[T, A]) def value: A = has
 
   inline given [T, A <: RefiningAnnotation] => HasAnnotation[T, A] = ${ materializeImpl[T, A] }
 
