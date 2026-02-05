@@ -7,11 +7,9 @@ toc: true
 
 ## Boilerplate in Type Class Instances
 
-In the Scala 2 era, type class derivation was often considered a "dark art."
-To automate serialization, take `GenCodec`s from [AVSystem's scala-commons library](https://github.com/AVSystem/scala-commons) as an example, one typically had to rely on the complex Reflection API or heavy-duty libraries like **Shapeless**.
-We’re talking about roughly **1,200 lines of low-level code** just to handle the boilerplate of peering into class structures and dealing with low-level macro transformations.
+Back in the Scala 2 days, type class derivation was a "dark art". Automating serialization — take AVSystem’s GenCodecs, for instance — required wrestling with the Reflection API or Shapeless. You’d easily end up with 1,200 lines of low-level macro code just to handle the boilerplate of peering into class structures.
 
-With Scala 3, the landscape has changed significantly.
+With Scala 3, the approach has changed significantly.
 We can achieve the same (and more) using the native `Mirror` API and `scala.compiletime` utilities.
 Most of the process is now "just Scala code" that runs at compile-time.
 We still need a *tiny* bit of macro magic for advanced features like annotation extraction, but we can get 95% of the way there with standard, readable code.
