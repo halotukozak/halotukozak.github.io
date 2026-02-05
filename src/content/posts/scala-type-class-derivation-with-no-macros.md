@@ -216,9 +216,11 @@ A small macro helps us check for the presence of an annotation at compile-time:
 class name(val value: String) extends RefiningAnnotation
 
 @implicitNotFound("${T} is not annotated with ${A}")
-opaque type HasAnnotation[T, A <: RefiningAnnotation] <: A = A
+opaque type HasAnnotation[T, A <: RefiningAnnotation] = A
 
 object HasAnnotation:
+  extension[A](has: HasAnnotation[?, A]) def value: A = has
+
   inline given [T, A <: RefiningAnnotation] => HasAnnotation[T, A] = ${ materializeImpl[T, A] }
 
   private def materializeImpl[T: Type, A <: RefiningAnnotation: Type](using quotes: Quotes): Expr[HasAnnotation[T, A]] =
