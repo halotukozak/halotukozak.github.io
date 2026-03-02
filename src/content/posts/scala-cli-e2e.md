@@ -6,7 +6,7 @@ tags: [ 'scala', 'scala-cli', 'devops' ]
 toc: true
 ---
 
-# Why scala-cli?
+## Why scala-cli?
 
 Every time I start a new Scala project, I find myself googling the same setup steps — formatting, testing, coverage,
 publishing, documentation. The traditional tools don't help: `sbt` has a steep learning curve, `Mill` is fast but
@@ -16,7 +16,7 @@ with first-class IDE support that actually works.
 This post is the reference I wish I had: a complete copy-paste workflow for a small library, using only `scala-cli`.
 Maybe it'll save you the same googling.
 
-# The Basics
+## The Basics
 
 A minimal `scala-cli` library project may look like this:
 
@@ -49,7 +49,7 @@ Directives cover the Scala version, dependencies (both main and test-only), and 
 `scala-cli` will automatically download the Scala compiler and dependencies, compile all files in the directory, and
 execute the entry point.
 
-## IDE Support
+### IDE Support
 
 If you're using VS Code (with Metals) or IntelliJ, `scala-cli` works out of the box. If you ever feel the IDE is out of
 sync, run:
@@ -58,7 +58,7 @@ sync, run:
 scala-cli --power setup-ide .
 ```
 
-# Formatting with Scalafmt
+### Formatting with Scalafmt
 
 Consistent code style is non-negotiable. `scala-cli` has built-in support for `scalafmt`.
 
@@ -75,7 +75,7 @@ automatically. You can also enforce formatting in CI:
 scala-cli fmt . --check
 ```
 
-# Testing
+### Testing
 
 Testing doesn't require a separate build module. Just create a `*.test.scala` file or put your tests in a `tests/`
 directory.
@@ -98,13 +98,13 @@ scala-cli test .
 
 `scala-cli` is smart enough to include test-only dependencies only when running the `test` command.
 
-# Code Coverage
+## Code Coverage
 
 `scala-cli` doesn't have a native `coverage` command. My approach here uses the Scala 3 compiler's built-in coverage
 instrumentation directly, with a custom report script that gives you full control. This is exactly how it's done in
 the [made](https://github.com/halotukozak/made) project.
 
-## How Scala 3 coverage instrumentation works
+### How Scala 3 coverage instrumentation works
 
 The Scala 3 compiler has a built-in coverage phase. When you pass `-coverage-out:<dir>`, the compiler does two things
 during compilation:
@@ -120,7 +120,7 @@ After `scala-cli test .` finishes, the output directory contains the coverage ma
 statement that was hit during the test run. The report step is just: deserialize the map, scan which measurement files
 exist, compute the ratio.
 
-## Setup
+### Report Generation
 
 1. Add coverage directives to `project.scala`:
 
@@ -191,7 +191,7 @@ exist, compute the ratio.
       uncovered (red) lines.
     - `CoberturaXmlWriter` — `cobertura.xml`, the standard format that CI tools understand.
 
-## CI integration
+### CI integration
 
 In GitHub Actions, the coverage step chains naturally after `scala-cli test`:
 
@@ -210,7 +210,7 @@ In GitHub Actions, the coverage step chains naturally after `scala-cli test`:
 generates `cobertura.xml`, and `cobertura-action` posts the coverage summary directly on the PR — no external service
 or token needed.
 
-# Publishing to Maven Central
+## Publishing to Maven Central
 
 Yes, you can publish libraries to Maven Central (or any repo) using `scala-cli`. This requires the `--power` flags.
 
@@ -231,7 +231,7 @@ First, add publishing metadata to your `project.scala`:
 `computeVersion git:tag` derives the version from the latest git tag — push `v0.1.0` and the published artifact is
 `0.1.0`. No version string to update manually.
 
-## PGP Key Setup
+### PGP Key Setup
 
 Maven Central requires all artifacts to be PGP-signed. `scala-cli` can generate a key pair for you:
 
@@ -253,7 +253,7 @@ You'll need four secrets in your CI environment: `SONATYPE_USERNAME`, `SONATYPE_
 from [creating an account on Central Portal](https://central.sonatype.com/) — after verifying your namespace (e.g.
 `io.github.yourname` via GitHub), generate a user token.
 
-## Running the publish command
+### Running the publish command
 
 ```bash
 # To a local repository (for testing)
@@ -349,7 +349,7 @@ jobs:
 
 Push a tag, artifact lands on Maven Central. That's it.
 
-# Documentation Generation
+## Documentation Generation
 
 `scala-cli` can generate Scaladoc with a single command:
 
@@ -379,7 +379,7 @@ One caveat: if your project uses Scala 3 macros, `scala-cli doc .` may fail beca
 expand them in a context where they can't run. There's no clean workaround yet — for now, you may need to exclude
 macro-heavy files from documentation generation.
 
-## Deploying to GitHub Pages
+### Deploying to GitHub Pages
 
 In case you would like to deploy Scaladoc to GitHub Pages on every version tag, here's the workflow.
 
@@ -453,13 +453,13 @@ also pin the version in your `project.scala`:
 //> using jvm 21
 ```
 
-# Wrapping Up
+## Wrapping Up
 
 `scala-cli` is no longer just a "scripting tool". It's a robust, fast, and modern way to build Scala applications.
 Whether you're writing a simple automation script or a published library, `scala-cli` provides a seamless E2E experience
 without the overhead of traditional build tools.
 
-# References
+## References
 
 - [Official scala-cli Documentation](https://scala-cli.virtuslab.org/)
 - [M&DE Repository](https://github.com/halotukozak/made) — the project used as the example throughout this post
