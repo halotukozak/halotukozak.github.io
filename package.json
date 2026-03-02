@@ -9,7 +9,8 @@
     "postbuild": "pagefind --site dist",
     "preview": "astro preview",
     "astro": "astro",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "test": "vitest run"
   },
   "dependencies": {
     "@astrojs/markdown-remark": "^6.3.6",
@@ -58,6 +59,7 @@
     "pagefind": "^1.4.0",
     "prettier": "3.8.0",
     "prettier-plugin-astro": "0.14.1",
-    "sass-embedded": "^1.92.1"
+    "sass-embedded": "^1.92.1",
+    "vitest": "^4.0.18"
   }
 }
