@@ -126,16 +126,11 @@ exist, compute the ratio.
 
     ```scala title="project.scala"
     //> using options -coverage-out:./.scoverage
-    //> using options -coverage-exclude-files:.*report.sc
     ```
 
    `-coverage-out:./.scoverage` tells the compiler where to write both the coverage map and the runtime measurement
    files.
    Everything lands in `.scoverage/`.
-
-   `-coverage-exclude-files:.*report.sc` prevents the report script itself from being instrumented — without this, the
-   compiler instruments `report.sc` too, which skews the coverage numbers (the report code always runs, inflating the
-   total).
 
 2. Run tests:
 
