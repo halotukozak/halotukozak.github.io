@@ -2,7 +2,7 @@
 title: 'Method too large'
 published: 2025-10-30
 draft: false
-tags: [ 'scala 3', 'macros', 'JVM', 'method too large', 'code generation' ]
+tags: [ 'scala', 'macro' ]
 toc: true
 ---
 

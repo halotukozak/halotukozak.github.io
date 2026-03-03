@@ -2,7 +2,7 @@
 title: 'Type-Safe Access to Method Parameter Defaults in Scala'
 published: 2026-01-10
 draft: false
-tags: [ 'scala 3', 'macros', 'default parameters', 'metaprogramming', 'compile-time' ]
+tags: [ 'scala', 'macro' ]
 toc: true
 ---
 

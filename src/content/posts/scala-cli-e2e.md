@@ -2,7 +2,7 @@
 title: 'scala-cli E2E Repo Setup'
 published: 2026-03-02
 draft: false
-tags: [ 'scala 3', 'scala-cli', 'build tool', 'CI/CD', 'project setup' ]
+tags: [ 'scala', 'scala-cli', 'devops' ]
 toc: true
 ---
 
