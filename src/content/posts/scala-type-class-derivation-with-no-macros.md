@@ -1,7 +1,7 @@
 ---
 title: 'Scala Type Class Derivation with (almost) no macros'
 published: 2026-02-01
-tags: [ 'scala', 'type class', 'compile-time' ]
+tags: [ 'scala 3', 'type class derivation', 'Mirror', 'metaprogramming', 'compile-time', 'serialization' ]
 toc: true
 ---
 
