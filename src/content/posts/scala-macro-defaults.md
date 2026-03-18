@@ -124,7 +124,7 @@ def defaultsImpl[T: Type](expr: Expr[T])(using quotes: Quotes): Expr[Map[String,
     .collect:
       case m if m.name.startsWith(prefix) =>            // Only collect methods starting with our prefix (e.g., "greet$default$1")
         val position = m.name.stripPrefix(prefix).toInt // Extract the position number
-        paramNames(position - 1)-> Ref(m).              // Ref(m) creates an expression that can call this method at runtime
+        paramNames(position - 1) -> Ref(m)              // Ref(m) creates an expression that can call this method at runtime
     
     // Convert each (paramName, methodRef) pair to an expression tuple
     // This prepares them for splicing into the macro result
