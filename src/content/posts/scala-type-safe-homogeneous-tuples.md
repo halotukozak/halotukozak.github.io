@@ -2,7 +2,7 @@
 title: 'Homogeneous Tuples in Scala 3'
 description: 'How to prove at compile time that a Scala 3 tuple contains only elements of a single type, using match types, opaque types, and clause interleaving.'
 published: 2026-04-06
-draft: true
+draft: false
 tags: [ 'scala', 'tuple', 'compile-time', 'type-safety' ]
 toc: true
 ---
@@ -121,6 +121,7 @@ A first attempt with a regular class:
 
 [//]: # (@formatter:off)
 ```scala 3
+@implicitNotFound("${Tup} does not contain only ${T}")
 class containsOnly[Tup <: Tuple, T]
 
 object containsOnly:
@@ -152,6 +153,7 @@ object entirely with an [opaque type](https://docs.scala-lang.org/scala3/referen
 
 [//]: # (@formatter:off)
 ```scala 3
+@implicitNotFound("${Tup} does not contain only ${T}")
 opaque infix type containsOnly[Tup <: Tuple, T] = Boolean
 
 object containsOnly:
@@ -180,10 +182,10 @@ def processInts[Tup <: Tuple](tup: Tup)(using Tup containsOnly Int): Int =
 processInts((1, 2, 3)) // compiles: 6
 processInts(EmptyTuple) // compiles: 0
 // processInts((1, "nope", 3))  // doesn't compile!
-// error: No given instance of type containsOnly[(Int, String, Int), Int] was found
+// error: (Int, String, Int) does not contain only Int
 ```
 
-The error message is clear — the compiler tells you exactly which tuple doesn't satisfy the constraint.
+The `@implicitNotFound` annotation gives us a human-readable error instead of the generic "No given instance" message.
 
 Now we have a reusable, zero-cost proof that a tuple is homogeneous. Time to do something useful with it.
 
@@ -310,9 +312,9 @@ That's it. One method. The `using` clause sits between the two type parameter li
 val result = (1, 2, 3).mapAs[Int]([t <: Int] => (x: t) => Some(x))
 // result = (Some(1), Some(2), Some(3))
 
-// Compile error — (Int, String) doesn't containsOnly Int:
+// Compile error:
 // (1, "nope").mapAs[Int]([t <: Int] => (x: t) => Some(x))
-// error: No given instance of type containsOnly[(Int, String), Int] was found
+// error: (Int, String) does not contain only Int
 ```
 
 No wrapper, no opaque type, no `AnyVal`. Clause interleaving makes the entire intermediate-object pattern unnecessary.
