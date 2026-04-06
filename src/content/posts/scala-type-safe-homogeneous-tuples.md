@@ -345,7 +345,7 @@ All the type-level machinery has been erased. The `=:=` evidence becomes a call 
 `containsOnly` proof is just `true`, and `mapAs` inlines down to a single `Tuples.map` call with a plain Java lambda.
 No wrappers, no intermediate objects — just a tuple, a function, and a runtime map.
 
-## Wrapping Up
+## Case Closed
 
 We went from runtime `ClassCastException` through match types, type classes, wrapper classes, opaque types,
 and finally arrived at a one-liner using clause interleaving. Each step taught us something about Scala 3's type
@@ -364,4 +364,4 @@ PS. Thesis defended. What do normal people do with their free time?
 - [SIP-47 — Clause Interleaving](https://docs.scala-lang.org/sips/clause-interleaving.html)
 - [Tuple API](https://scala-lang.org/api/3.x/scala/Tuple.html)
 - [Polymorphic Function Types](https://docs.scala-lang.org/scala3/reference/new-types/polymorphic-function-types.html)
-- [M&DE Repository](https://github.com/halotukozak/made) — the project using this pattern
+- [M&DE Repository](https://github.com/halotukozak/made) 
