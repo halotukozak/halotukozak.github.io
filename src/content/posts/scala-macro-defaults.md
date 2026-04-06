@@ -1,8 +1,9 @@
 ---
 title: 'Type-Safe Access to Method Parameter Defaults in Scala'
+description: 'How to extract method parameter defaults at compile time in Scala 3 using macros, the Selectable trait, and computed field names for full type safety.'
 published: 2026-01-10
 draft: false
-tags: [ 'scala', 'macro' ]
+tags: [ 'scala', 'macro', 'compile-time', 'scala-3', 'type-safety' ]
 toc: true
 ---
 
