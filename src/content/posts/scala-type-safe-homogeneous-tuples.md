@@ -24,7 +24,9 @@ no built-in way to say "this tuple contains only `Int`s."
 
 Let's see what happens when you try.
 
-## Naive Approach: Just Use Tuple.map
+## What Doesn't Work
+
+### Tuple.map
 
 Tuples in Scala 3 have a `map` method. But it takes
 a [polymorphic function](https://docs.scala-lang.org/scala3/reference/new-types/polymorphic-function-types.html)
@@ -46,7 +48,7 @@ We have to explicitly pass `[[X] =>> Int]` as the result type because the compil
 the return type doesn't match `t`. And of course, the compiler won't stop you from writing the same code for
 `("a", "b", "c")` — you'd get a `ClassCastException` instead of a compile error.
 
-## Converting to Array or List? Also Broken
+### Converting to Array or List
 
 OK, so `map` doesn't work without casts. What about converting the whole tuple to an `Array` or `List` first?
 
@@ -69,7 +71,9 @@ mixed.toList.asInstanceOf[List[Int]].sum // ClassCastException — far from the 
 Every approach so far either crashes at runtime or silently hides the bug. We need a way to prove, at compile time,
 that a tuple contains only elements of a given type.
 
-## Step 1: A Match Type
+## The containsOnly Proof
+
+### A Match Type
 
 Scala 3's [match types](https://docs.scala-lang.org/scala3/reference/new-types/match-types.html) let us compute types
 based on pattern matching at the type level. Here's the idea: walk the tuple recursively and check that every element
@@ -112,7 +116,7 @@ This works, but has two problems. The error message is cryptic — "Cannot prove
 no escape hatch for cases where you *know* the constraint holds but the compiler can't prove it (e.g. after a runtime
 check). A dedicated type class solves both.
 
-## Step 2: The Type Class
+### The Type Class
 
 The standard approach: wrap the match type in a type class whose `given` instance can only be synthesized when the match
 type reduces to `true`.
@@ -189,7 +193,9 @@ The `@implicitNotFound` annotation gives us a human-readable error instead of th
 
 Now we have a reusable, zero-cost proof that a tuple is homogeneous. Time to do something useful with it.
 
-## Step 3: mapAs
+## Putting containsOnly to Work
+
+### mapAs
 
 Now let's put `containsOnly` to work. I want a `mapAs` extension on `Tuple` that requires a `containsOnly` proof,
 applies a polymorphic function to each element, and preserves the full type information in the result.
@@ -226,7 +232,7 @@ This compiles, but using it is painful — Scala can't partially infer type para
 
 We want to fix `T` first (via `mapAs[Int]`) and let the compiler infer `F` from the function we pass.
 
-## Step 4: Currying Type Parameters with a Wrapper
+### Currying Type Parameters with a Wrapper
 
 The classic trick: return an intermediate object that captures the first type parameter, then let the caller supply the
 second.
@@ -266,7 +272,7 @@ val lengths: (List[String], List[String]) = strs.mapAs[String]([t <: String] => 
 It works, but there's a problem. `MapAs` is a class — every call allocates a wrapper object on the heap. For a
 type-level operation that exists purely to curry type parameters, that's wasteful.
 
-## Step 5: Eliminating the Wrapper Allocation
+### Eliminating the Wrapper Allocation
 
 We could try extending `AnyVal`, but the optimization isn't guaranteed. The JVM still allocates when the value class is
 used as a generic type parameter, assigned to a supertype, or passed to a method expecting `Any`. The proper Scala 3
@@ -293,7 +299,7 @@ val result: (Option[Int], Option[Int], Option[Int]) = (1, 2, 3).mapAs[Int]([t <:
 // result = (Some(1), Some(2), Some(3))
 ```
 
-## Step 6: Wait — Can We Skip the Wrapper Entirely?
+### Wait — Can We Skip the Wrapper Entirely?
 
 After all that work on the wrapper, let's check if Scala 3 actually needs it.
 Since [SIP-47](https://docs.scala-lang.org/sips/clause-interleaving.html) (clause interleaving, stable since Scala
