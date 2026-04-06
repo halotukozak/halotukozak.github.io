@@ -1,8 +1,9 @@
 ---
 title: 'Homogeneous Tuples in Scala 3'
+description: 'How to prove at compile time that a Scala 3 tuple contains only elements of a single type, using match types, opaque type classes, and clause interleaving.'
 published: 2026-04-06
 draft: true
-tags: [ 'scala', 'tuple', 'compile-time' ]
+tags: [ 'scala', 'tuple', 'compile-time', 'type-safety' ]
 toc: true
 ---
 
@@ -84,7 +85,7 @@ type ContainsOnly[Tup <: Tuple, T] <: Boolean = Tup match
 This reads naturally: an empty tuple trivially contains only `T`, a tuple whose head is `T` recurses on the tail,
 anything else is `false`.
 
-Let's test it with `summon` which materializes a given at compile time or fails:
+Let's test it with `summon`, which materializes a given at compile time or fails:
 
 ```scala 3
 // These compile:
@@ -102,7 +103,7 @@ It works! You could even use the match type directly as a constraint with `=:=`:
 def processInts[Tup <: Tuple](tup: Tup)(using ContainsOnly[Tup, Int] =:= true): String =
   "all ints!"
 
-processInts((1, 2, 3))     // compiles!
+processInts((1, 2, 3)) // compiles!
 // processInts((1, "x", 3)) // doesn't compile — Cannot prove that false =:= true
 ```
 
@@ -113,8 +114,8 @@ check). A dedicated type class solves both.
 
 ## Step 2: The Type Class
 
-The standard approach: wrap the match type in a type class whose `given` instance can only be synthesized when the
-match type reduces to `true`.
+The standard approach: wrap the match type in a type class whose `given` instance can only be synthesized when the match
+type reduces to `true`.
 
 A first attempt with a regular class:
 
@@ -124,7 +125,7 @@ class containsOnly[Tup <: Tuple, T]
 
 object containsOnly:
 
-  private type Loop[Tup <: Tuple, T] <: Boolean = Tup match
+  type Loop[Tup <: Tuple, T] <: Boolean = Tup match
     case EmptyTuple => true
     case T *: tail => Loop[tail, T]
     case _ => false
@@ -139,8 +140,8 @@ introduces a new clause. The type parameters come first, then the context parame
 proof that the match type reduced to `true`), and finally the result type. It reads left-to-right: "for any `Tup` and
 `T`, given that `Loop[Tup, T]` equals `true`, produce a `containsOnly[Tup, T]`."
 
-One subtlety: we'd like `Loop` to be `private`, but the compiler requires it to be visible since the `given` signature
-references it.
+One subtlety: we'd like `Loop` to be `private`, but it can't be — the compiler needs to see it at the call site to
+reduce `Loop[Tup, T]` and resolve the `=:=` evidence.
 
 This works — `containsOnly` instances are only synthesized when `Loop` reduces to `true`. But every summon allocates a
 new `containsOnly()` object at runtime, even though the instance carries no data. It's a pure compile-time proof that
@@ -191,10 +192,16 @@ Now we have a reusable, zero-cost proof that a tuple is homogeneous. Time to do 
 Now let's put `containsOnly` to work. I want a `mapAs` extension on `Tuple` that requires a `containsOnly` proof,
 applies a polymorphic function to each element, and preserves the full type information in the result.
 
-We use `extension (tup: Tuple)` and refer to `tup.type` in the return type. Why not `extension [Tup <: Tuple](tup: Tup)`?
-Because `Tuple.Map[Tup, F]` is a match type — the compiler needs to see a *concrete* tuple to reduce it. An abstract
-type parameter `Tup` leaves the match stuck. `tup.type`, however, is the singleton type of the actual value, so at
-the call site the compiler knows the exact shape and `Tuple.Map` reduces correctly.
+We use `extension (tup: Tuple)` and refer to `tup.type` in the return type. Why not
+`extension [Tup <: Tuple](tup: Tup)`? Because `Tuple.Map[Tup, F]` is a match type — the compiler needs to see a
+*concrete* tuple to reduce it. An abstract type parameter `Tup` leaves the match stuck. `tup.type`, however, is the
+singleton type of the actual value, so at the call site the compiler knows the exact shape and `Tuple.Map` reduces
+correctly.
+
+Note the `asInstanceOf[t & T]` inside the implementation — this cast is safe *because* the `containsOnly` proof
+guarantees every element is already a `T`. The cast just narrows the abstract `t` to `t & T` so the bounded
+polymorphic function `f` accepts it. Without the proof, this would be exactly the kind of unsafe cast we're trying to
+eliminate.
 
 A first attempt — one method with all type parameters:
 
@@ -259,10 +266,10 @@ type-level operation that exists purely to curry type parameters, that's wastefu
 
 ## Step 5: Eliminating the Wrapper Allocation
 
-We could try extending `AnyVal`, but the optimization isn't guaranteed — the JVM still allocates the wrapper when the
-value class is used as a generic type parameter, assigned to a supertype, or passed to a method expecting `Any` (maybe
-a topic for another post). The proper Scala 3 approach is an opaque type — a compile-time-only abstraction that's erased to its underlying type with
-*guaranteed* zero overhead:
+We could try extending `AnyVal`, but the optimization isn't guaranteed. The JVM still allocates when the value class is
+used as a generic type parameter, assigned to a supertype, or passed to a method expecting `Any`. The proper Scala 3
+approach is an opaque type — a compile-time-only abstraction erased to its underlying type with *guaranteed* zero
+overhead:
 
 ```scala 3
 opaque type MapAs[T, Tup <: Tuple] = Tup
@@ -287,8 +294,8 @@ val result: (Option[Int], Option[Int], Option[Int]) = (1, 2, 3).mapAs[Int]([t <:
 ## Step 6: Wait — Can We Skip the Wrapper Entirely?
 
 After all that work on the wrapper, let's check if Scala 3 actually needs it.
-Since [SIP-47](https://docs.scala-lang.org/sips/clause-interleaving.html) (clause interleaving), you can mix type and
-value parameter clauses freely:
+Since [SIP-47](https://docs.scala-lang.org/sips/clause-interleaving.html) (clause interleaving, stable since Scala
+3.4), you can mix type and value parameter clauses freely:
 
 ```scala 3
 extension (tup: Tuple)
@@ -336,8 +343,17 @@ We went from runtime `ClassCastException` through match types, type classes, wra
 and finally arrived at a one-liner using clause interleaving. Each step taught us something about Scala 3's type
 system — and the last step reminded us to check if the language already has a simpler way.
 
-I will use this `containsOnly` + `mapAs` pattern in [M&DE](https://github.com/halotukozak/made), where typed pipelines
-need to transform homogeneous tuples of domain objects while preserving full type information. If you're building something
-similar, grab the code and adjust.
+I'd liek to use `containsOnly` and `mapAs` patterns in [M&DE](https://github.com/halotukozak/made), where typed pipelines
+need to transform homogeneous tuples of domain objects while preserving full type information. If you're building
+something similar, grab the code and adjust.
 
 PS. Thesis defended. What do normal people do with their free time?
+
+## References
+
+- [Match Types](https://docs.scala-lang.org/scala3/reference/new-types/match-types.html)
+- [Opaque Type Aliases](https://docs.scala-lang.org/scala3/reference/other-new-features/opaques.html)
+- [SIP-47 — Clause Interleaving](https://docs.scala-lang.org/sips/clause-interleaving.html)
+- [Tuple API](https://scala-lang.org/api/3.x/scala/Tuple.html)
+- [Polymorphic Function Types](https://docs.scala-lang.org/scala3/reference/new-types/polymorphic-function-types.html)
+- [M&DE Repository](https://github.com/halotukozak/made) — the project using this pattern
