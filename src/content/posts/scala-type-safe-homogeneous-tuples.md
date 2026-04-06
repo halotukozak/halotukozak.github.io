@@ -2,7 +2,7 @@
 title: 'Homogeneous Tuples in Scala 3'
 published: 2026-04-06
 draft: true
-tags: [ 'scala', 'type-level', 'compile-time' ]
+tags: [ 'scala', 'tuple', 'compile-time' ]
 toc: true
 ---
 
@@ -27,14 +27,14 @@ Let's see what happens when you try.
 
 Tuples in Scala 3 have a `map` method. But it takes
 a [polymorphic function](https://docs.scala-lang.org/scala3/reference/new-types/polymorphic-function-types.html)
-`[t] => t => F[t]` — inside that lambda,
-`t` is abstract. You don't know it's `Int`, so you can't call `Int`-specific operations:
+`[t] => t => F[t]` — inside that lambda, `t` is abstract. You don't know it's `Int`, so you can't call `Int`-specific
+operations:
 
 ```scala 3
 val tup = (1, 2, 3)
 
 // Won't compile — t is not known to be Int:
-// tup.map([t] => (x: t) => x + 1)
+//tup.map([t] => (x: t) => x + 1)
 
 // You'd have to cast, losing all safety:
 tup.map[[X] =>> Int]([t] => (x: t) => x.asInstanceOf[Int] + 1)
@@ -96,22 +96,20 @@ summon[ContainsOnly[EmptyTuple, String] =:= true]
 // Error: Cannot prove that false =:= true
 ```
 
-It works! But match types have a limitation. You might think you could use the match type directly as a constraint:
+It works! You could even use the match type directly as a constraint with `=:=`:
 
 ```scala 3
-// Doesn't work — you can't manually construct =:= evidence:
 def processInts[Tup <: Tuple](tup: Tup)(using ContainsOnly[Tup, Int] =:= true): String =
   "all ints!"
 
-// The compiler won't let you call this — =:= evidence can only be summoned,
-// not passed explicitly. And summoning requires the match type to be fully
-// reduced, which doesn't happen with abstract Tup.
+processInts((1, 2, 3))     // compiles!
+// processInts((1, "x", 3)) // doesn't compile — Cannot prove that false =:= true
 ```
 
-The problem is that `=:=` evidence is something the compiler synthesizes — you can't construct it by hand. And when
-`Tup` is abstract (as in a generic method), the compiler can't reduce the match type, so it can't produce the evidence.
-We need to move the match type reduction into a `given` definition, where the compiler resolves it at the *call site*
-(where concrete types are known).
+This works, but has two problems. The error message is cryptic — "Cannot prove that false =:= true" says nothing about
+*which type* broke it. And `=:=` has no public constructor, so you can't create an instance yourself — meaning there's
+no escape hatch for cases where you *know* the constraint holds but the compiler can't prove it (e.g. after a runtime
+check). A dedicated type class solves both.
 
 ## Step 2: The Type Class
 
@@ -142,8 +140,7 @@ proof that the match type reduced to `true`), and finally the result type. It re
 `T`, given that `Loop[Tup, T]` equals `true`, produce a `containsOnly[Tup, T]`."
 
 One subtlety: we'd like `Loop` to be `private`, but the compiler requires it to be visible since the `given` signature
-references it. In the opaque type version below this is less of a problem — the whole companion is the abstraction
-boundary.
+references it.
 
 This works — `containsOnly` instances are only synthesized when `Loop` reduces to `true`. But every summon allocates a
 new `containsOnly()` object at runtime, even though the instance carries no data. It's a pure compile-time proof that
@@ -167,9 +164,9 @@ object containsOnly:
 ```
 [//]: # (@formatter:on)
 
-Now `containsOnly[Tup, T]` is just a `Boolean` at runtime — no allocation. The `=:=` evidence ensures the compiler
-only synthesizes this given when `Loop` reduces to `true`. If you try to summon `containsOnly[(Int, String), Int]`,
-the evidence can't be constructed and compilation fails.
+Now `containsOnly[Tup, T]` is just a `Boolean` at runtime — literally the value `true`. No object, no allocation, no
+overhead. The `=:=` evidence ensures the compiler only synthesizes this given when `Loop` reduces to `true`. If you try
+to summon `containsOnly[(Int, String), Int]`, the evidence can't be constructed and compilation fails.
 
 The `infix` modifier lets us write `Tup containsOnly T` instead of `containsOnly[Tup, T]` — a small readability win.
 
@@ -179,8 +176,8 @@ Let's test that the type class works as a constraint:
 def processInts[Tup <: Tuple](tup: Tup)(using Tup containsOnly Int): Int =
   tup.toList.asInstanceOf[List[Int]].sum // safe now — the proof guarantees all elements are Int
 
-processInts((1, 2, 3))     // compiles: 6
-processInts(EmptyTuple)     // compiles: 0
+processInts((1, 2, 3)) // compiles: 6
+processInts(EmptyTuple) // compiles: 0
 // processInts((1, "nope", 3))  // doesn't compile!
 // error: No given instance of type containsOnly[(Int, String, Int), Int] was found
 ```
@@ -189,21 +186,21 @@ The error message is clear — the compiler tells you exactly which tuple doesn'
 
 Now we have a reusable, zero-cost proof that a tuple is homogeneous. Time to do something useful with it.
 
-## Step 3: mapOnly
+## Step 3: mapAs
 
-Now let's put `containsOnly` to work. I want a `mapOnly` extension on `Tuple` that requires a `containsOnly` proof,
+Now let's put `containsOnly` to work. I want a `mapAs` extension on `Tuple` that requires a `containsOnly` proof,
 applies a polymorphic function to each element, and preserves the full type information in the result.
 
-We use `extension (tup: Tuple)` with `tup.type` — the singleton type — so the compiler tracks the *exact* tuple type
-through the call, preserving full type information in the result.
+We use `extension (tup: Tuple)` and refer to `tup.type` in the return type. Why not `extension [Tup <: Tuple](tup: Tup)`?
+Because `Tuple.Map[Tup, F]` is a match type — the compiler needs to see a *concrete* tuple to reduce it. An abstract
+type parameter `Tup` leaves the match stuck. `tup.type`, however, is the singleton type of the actual value, so at
+the call site the compiler knows the exact shape and `Tuple.Map` reduces correctly.
 
 A first attempt — one method with all type parameters:
 
 ```scala 3
 extension (tup: Tuple)
-  inline def mapOnly[T, F[_ <: T]](
-    inline f: [t <: T] => t => F[t],
-  )(using tup.type containsOnly T): Tuple.Map[tup.type, [X] =>> F[X & T]] =
+  inline def mapAs[T, F[_ <: T]](inline f: [t <: T] => t => F[t])(using tup.type containsOnly T): Tuple.Map[tup.type, [X] =>> F[X & T]] =
     tup.map[[X] =>> F[X & T]]([t] => (t: t) => f(t.asInstanceOf[t & T]))
 ```
 
@@ -212,13 +209,13 @@ This compiles, but using it is painful — Scala can't partially infer type para
 
 ```scala 3
 // You'd have to write:
-(1, 2, 3).mapOnly[Int, Option]([t <: Int] => (x: t) => Some(x): Option[t])
+(1, 2, 3).mapAs[Int, Option]([t <: Int] => (x: t) => Some(x))
 
 // But you can't write this (F can't be inferred from T alone):
-// (1, 2, 3).mapOnly[Int]([t <: Int] => (x: t) => Some(x): Option[t])
+// (1, 2, 3).mapAs[Int]([t <: Int] => (x: t) => Some(x))
 ```
 
-We want to fix `T` first (via `mapOnly[Int]`) and let the compiler infer `F` from the function we pass.
+We want to fix `T` first (via `mapAs[Int]`) and let the compiler infer `F` from the function we pass.
 
 ## Step 4: Currying Type Parameters with a Wrapper
 
@@ -227,65 +224,63 @@ second.
 
 ```scala 3
 extension (tup: Tuple)
-  inline def mapOnly[T](using tup.type containsOnly T): MapOnly[T, tup.type] = MapOnly(tup)
+  inline def mapAs[T](using tup.type containsOnly T): MapAs[T, tup.type] = MapAs(tup)
 
-class MapOnly[T, Tup <: Tuple](private val underlying: Tup):
+class MapAs[T, Tup <: Tuple](private val underlying: Tup):
   inline def apply[F[_ <: T]](inline f: [t <: T] => t => F[t]): Tuple.Map[Tup, [X] =>> F[X & T]] =
     underlying.map[[X] =>> F[X & T]]([t] => (t: t) => f(t.asInstanceOf[t & T]))
 ```
 
 Let me unpack what's going on:
 
-- `mapOnly[T]` fixes the element type and returns a `MapOnly` wrapper, but only if the `containsOnly` proof exists.
-- `MapOnly.apply[F]` takes the higher-kinded type `F` and a polymorphic function `f`.
-- [`Tuple.Map[Tup, ...]`](https://scala-lang.org/api/3.x/scala/Tuple.html) computes the result type: if `Tup = (Int, Int, Int)` and `F = Option`, the result
-  is `(Option[Int], Option[Int], Option[Int])`.
+- `mapAs[T]` fixes the element type and returns a `MapAs` wrapper, but only if the `containsOnly` proof exists.
+- `MapAs.apply[F]` takes the higher-kinded type `F` and a polymorphic function `f`.
+- [`Tuple.Map[Tup, ...]`](https://scala-lang.org/api/3.x/scala/Tuple.html) computes the result type: if
+  `Tup = (Int, Int, Int)` and `F = Option`, the result is `(Option[Int], Option[Int], Option[Int])`.
 - The `X & T` intersection ensures the compiler knows each element is a subtype of `T`.
 
 Testing:
 
 ```scala 3
 val ints = (1, 2, 3)
-val opts: (Option[Int], Option[Int], Option[Int]) =
-  ints.mapOnly[Int]([t <: Int] => (x: t) => Some(x): Option[t])
+val opts: (Option[Int], Option[Int], Option[Int]) = ints.mapAs[Int]([t <: Int] => (x: t) => Some(x))
 // opts = (Some(1), Some(2), Some(3))
 
 val strs = ("a", "b")
-val lengths: (List[String], List[String]) =
-  strs.mapOnly[String]([t <: String] => (x: t) => List(x): List[t])
+val lengths: (List[String], List[String]) = strs.mapAs[String]([t <: String] => (x: t) => List(x))
 // lengths = (List(a), List(b))
 
 // This won't compile:
-// (1, "mixed", 3).mapOnly[Int]([t <: Int] => (x: t) => Some(x))
+// (1, "mixed", 3).mapAs[Int]([t <: Int] => (x: t) => Some(x))
 ```
 
-It works, but there's a problem. `MapOnly` is a class — every call allocates a wrapper object on the heap. For a
+It works, but there's a problem. `MapAs` is a class — every call allocates a wrapper object on the heap. For a
 type-level operation that exists purely to curry type parameters, that's wasteful.
 
 ## Step 5: Eliminating the Wrapper Allocation
 
-We could try extending `AnyVal`, but it doesn't compose well with generics and the optimization isn't guaranteed. The
-proper Scala 3 approach is an opaque type — a compile-time-only abstraction that's erased to its underlying type with
+We could try extending `AnyVal`, but the optimization isn't guaranteed — the JVM still allocates the wrapper when the
+value class is used as a generic type parameter, assigned to a supertype, or passed to a method expecting `Any` (maybe
+a topic for another post). The proper Scala 3 approach is an opaque type — a compile-time-only abstraction that's erased to its underlying type with
 *guaranteed* zero overhead:
 
 ```scala 3
-opaque type MapOnly[T, Tup <: Tuple] = Tup
+opaque type MapAs[T, Tup <: Tuple] = Tup
 
-object MapOnly:
-  extension [T, Tup <: Tuple](mapOnly: MapOnly[T, Tup])
-    inline def apply[F[_ <: T]](inline f: [t <: T] => t => F[t]): Tuple.Map[Tup, [X] =>> F[X & T]] = 
-      (mapOnly: Tup).map[[X] =>> F[X & T]]([t] => (t: t) => f(t.asInstanceOf[t & T]))
+object MapAs:
+  extension [T, Tup <: Tuple](mapAs: MapAs[T, Tup])
+    inline def apply[F[_ <: T]](inline f: [t <: T] => t => F[t]): Tuple.Map[Tup, [X] =>> F[X & T]] =
+      (mapAs: Tup).map[[X] =>> F[X & T]]([t] => (t: t) => f(t.asInstanceOf[t & T]))
 
 extension (tup: Tuple)
-  inline def mapOnly[T](using tup.type containsOnly T): MapOnly[T, tup.type] = tup
+  inline def mapAs[T](using tup.type containsOnly T): MapAs[T, tup.type] = tup
 ```
 
-Inside the `MapOnly` companion, we know that `MapOnly[T, Tup]` *is* `Tup`. Outside, the type system enforces the
+Inside the `MapAs` companion, we know that `MapAs[T, Tup]` *is* `Tup`. Outside, the type system enforces the
 abstraction boundary. No allocation, no erasure surprises, no caveats. The API is identical:
 
 ```scala 3
-val result: (Option[Int], Option[Int], Option[Int]) =
-  (1, 2, 3).mapOnly[Int]([t <: Int] => (x: t) => Some(x): Option[t])
+val result: (Option[Int], Option[Int], Option[Int]) = (1, 2, 3).mapAs[Int]([t <: Int] => (x: t) => Some(x))
 // result = (Some(1), Some(2), Some(3))
 ```
 
@@ -297,9 +292,7 @@ value parameter clauses freely:
 
 ```scala 3
 extension (tup: Tuple)
-  inline def mapOnly[T](using tup.type containsOnly T)[F[_ <: T]](
-    inline f: [t <: T] => t => F[t],
-  ): Tuple.Map[tup.type, [X] =>> F[X & T]] =
+  inline def mapAs[T](using tup.type containsOnly T)[F[_ <: T]](inline f: [t <: T] => t => F[t]): Tuple.Map[tup.type, [X] =>> F[X & T]] =
     tup.map[[X] =>> F[X & T]]([t] => (t: t) => f(t.asInstanceOf[t & T]))
 ```
 
@@ -307,24 +300,44 @@ That's it. One method. The `using` clause sits between the two type parameter li
 `containsOnly` proof is resolved, and then `F` is provided — all in a single call.
 
 ```scala 3
-val result = (1, 2, 3).mapOnly[Int]([t <: Int] => (x: t) => Some(x): Option[t])
+val result = (1, 2, 3).mapAs[Int]([t <: Int] => (x: t) => Some(x))
 // result = (Some(1), Some(2), Some(3))
 
 // Compile error — (Int, String) doesn't containsOnly Int:
-// (1, "nope").mapOnly[Int]([t <: Int] => (x: t) => Some(x))
+// (1, "nope").mapAs[Int]([t <: Int] => (x: t) => Some(x))
 // error: No given instance of type containsOnly[(Int, String), Int] was found
 ```
 
 No wrapper, no opaque type, no `AnyVal`. Clause interleaving makes the entire intermediate-object pattern unnecessary.
 
+Let's peek at what the compiler actually generates (decompiled from bytecode):
+
+[//]: # (@formatter:off)
+```java
+Tuple3 tup$proxy1 = .MODULE$.apply(BoxesRunTime.boxToInteger(1), BoxesRunTime.boxToInteger(2), BoxesRunTime.boxToInteger(3));
+containsOnly$package$ var4 = containsOnly.package..MODULE$;
+scala..eq.colon.eq x$1$proxy1 = scala..less.colon.less..MODULE$.refl();
+boolean x$2$proxy1 = true;
+Function1 f$proxy2 = (t) -> {
+    int var1 = BoxesRunTime.unboxToInt(t);
+    return scala.Some..MODULE$.apply(BoxesRunTime.boxToInteger(var1));
+};
+scala.runtime.Tuples..MODULE$.map(tup$proxy1, f$proxy2);
+```
+[//]: # (@formatter:on)
+
+All the type-level machinery has been erased. The `=:=` evidence becomes a call to `refl()` (a no-op singleton), the
+`containsOnly` proof is just `true`, and `mapAs` inlines down to a single `Tuples.map` call with a plain Java lambda.
+No wrappers, no intermediate objects — just a tuple, a function, and a runtime map.
+
 ## The Journey
 
-We went from runtime `ClassCastException`s through match types, type classes, wrapper classes, opaque types,
+We went from runtime `ClassCastException` through match types, type classes, wrapper classes, opaque types,
 and finally arrived at a one-liner using clause interleaving. Each step taught us something about Scala 3's type
 system — and the last step reminded us to check if the language already has a simpler way.
 
-I use this `containsOnly` + `mapOnly` pattern in [M&DE](https://github.com/halotukozak/made), where typed pipelines need
-to transform homogeneous tuples of domain objects while preserving full type information. If you're building something
+I will use this `containsOnly` + `mapAs` pattern in [M&DE](https://github.com/halotukozak/made), where typed pipelines
+need to transform homogeneous tuples of domain objects while preserving full type information. If you're building something
 similar, grab the code and adjust.
 
 PS. Thesis defended. What do normal people do with their free time?
