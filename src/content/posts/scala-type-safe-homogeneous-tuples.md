@@ -299,7 +299,7 @@ val result: (Option[Int], Option[Int], Option[Int]) = (1, 2, 3).mapAs[Int]([t <:
 // result = (Some(1), Some(2), Some(3))
 ```
 
-### Wait — Can We Skip the Wrapper Entirely?
+### Can We Skip the Wrapper Entirely?
 
 After all that work on the wrapper, let's check if Scala 3 actually needs it.
 Since [SIP-47](https://docs.scala-lang.org/sips/clause-interleaving.html) (clause interleaving, stable since Scala
@@ -345,7 +345,7 @@ All the type-level machinery has been erased. The `=:=` evidence becomes a call 
 `containsOnly` proof is just `true`, and `mapAs` inlines down to a single `Tuples.map` call with a plain Java lambda.
 No wrappers, no intermediate objects — just a tuple, a function, and a runtime map.
 
-## The Journey
+## Wrapping Up
 
 We went from runtime `ClassCastException` through match types, type classes, wrapper classes, opaque types,
 and finally arrived at a one-liner using clause interleaving. Each step taught us something about Scala 3's type
