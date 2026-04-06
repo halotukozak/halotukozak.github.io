@@ -1,6 +1,6 @@
 ---
 title: 'Homogeneous Tuples in Scala 3'
-description: 'How to prove at compile time that a Scala 3 tuple contains only elements of a single type, using match types, opaque type classes, and clause interleaving.'
+description: 'How to prove at compile time that a Scala 3 tuple contains only elements of a single type, using match types, opaque types, and clause interleaving.'
 published: 2026-04-06
 draft: true
 tags: [ 'scala', 'tuple', 'compile-time', 'type-safety' ]
@@ -343,7 +343,7 @@ We went from runtime `ClassCastException` through match types, type classes, wra
 and finally arrived at a one-liner using clause interleaving. Each step taught us something about Scala 3's type
 system — and the last step reminded us to check if the language already has a simpler way.
 
-I'd liek to use `containsOnly` and `mapAs` patterns in [M&DE](https://github.com/halotukozak/made), where typed pipelines
+I'd like to use `containsOnly` and `mapAs` patterns in [M&DE](https://github.com/halotukozak/made), where typed pipelines
 need to transform homogeneous tuples of domain objects while preserving full type information. If you're building
 something similar, grab the code and adjust.
 
