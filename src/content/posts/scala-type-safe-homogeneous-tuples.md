@@ -385,9 +385,9 @@ tup.mapAs[Int][KString]([x <: Int] => (x: x) => x.toString)
 This pattern comes up more often than you'd expect — any time the result type doesn't depend on the element type,
 you'll need to spell out `F`.
 
-### Abstract Type Members
+### Limitation: Abstract Type Members
 
-The same explicit-`F` technique opens up another interesting use case. Suppose your elements share a common trait with
+The same explicit-`F` technique suggests another interesting use case. Suppose your elements share a common trait with
 an abstract type member:
 
 ```scala 3
@@ -398,7 +398,7 @@ trait C:
 val tup = (new C { type T = String; val t = "" }, new C { type T = Int; val t = 1 })
 ```
 
-Each element is a `C`, but its `T` is different. We can extract `T` with a match type that peels open the refinement:
+Each element is a `C`, but its `T` is different. Unfortunatelly, we cannot extract `T` with a match type that peels open the refinement:
 
 ```scala 3
 type C_Of[t] = C { type T = t }
@@ -408,17 +408,29 @@ type Extract_T[X <: C] = X match
 tup.mapAs[C][Extract_T]([x <: C] => (x: x) => x.t)
 ```
 
-Now `mapAs` knows that mapping over a `(C { type T = String }, C { type T = Int })` with `Extract_T` produces a
-`(String, Int)` — the abstract members are resolved at compile time.
+Fails with:
 
-If you want to skip the helper types, a type projection does the same thing in one line:
+```
+Found:    x.t
+Required: Extract_T[x]
+```
+
+A type projection doesn't help either:
 
 ```scala 3
 tup.mapAs[C][[X <: C] =>> X#T]([x <: C] => (x: x) => x.t)
 ```
 
-Either way, the key insight is the same: when the compiler can't infer `F`, you provide it — and that gives you access
-to surprisingly expressive mappings. I hope it will be inferred someday.
+Fails with:
+```
+x is not a legal path
+since it is not a concrete type
+```
+
+The root issue is that match types cannot reduce when the scrutinee is an abstract type parameter — the compiler 
+doesn't "open" the refinement at the call site. Type projections (`X#T`) require a concrete path, which a polymorphic 
+lambda's type parameter is not. As of now, abstract type members remain out of reach for `mapAs`. If you know a workaround,
+I'd love to hear it.
 
 ## Case Closed
 
