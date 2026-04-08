@@ -345,15 +345,90 @@ All the type-level machinery has been erased. The `=:=` evidence becomes a call 
 `containsOnly` proof is just `true`, and `mapAs` inlines down to a single `Tuples.map` call with a plain Java lambda.
 No wrappers, no intermediate objects — just a tuple, a function, and a runtime map.
 
+## Beyond Type Constructors
+
+### Plain Return Types
+
+So far every example used a type constructor like `Option` or `List` as the result — `F` was always something the
+compiler could figure out from the function's return type. But what if your function returns a plain type?
+
+```scala 3
+val tup = (1, 2, 3)
+tup.mapAs[Int]([x <: Int] => x => x.toString)
+```
+
+This fails:
+
+```
+Found:    String
+Required: (F?[_$1 <: Int])[x]
+```
+
+The problem is that `mapAs` expects `F[_ <: T]` — a type constructor that wraps `T`. `Option[Int]` fits because
+`Option` is `[X] =>> Option[X]`. But `String` isn't `F[Int]` for any `F` — it has no relationship to the input type,
+so the compiler can't infer what `F` should be.
+
+The fix is to tell the compiler explicitly what `F` is — a constant function that ignores its argument and returns
+`String`:
+
+```scala 3
+tup.mapAs[Int][[X <: Int] =>> String]([x <: Int] => (x: x) => x.toString)
+```
+
+Or equivalently, with a named type alias:
+
+```scala 3
+type KString[_] = String
+tup.mapAs[Int][KString]([x <: Int] => (x: x) => x.toString)
+```
+
+This pattern comes up more often than you'd expect — any time the result type doesn't depend on the element type,
+you'll need to spell out `F`.
+
+### Abstract Type Members
+
+The same explicit-`F` technique opens up another interesting use case. Suppose your elements share a common trait with
+an abstract type member:
+
+```scala 3
+trait C:
+  type T
+  def t: T
+
+val tup = (new C { type T = String; val t = "" }, new C { type T = Int; val t = 1 })
+```
+
+Each element is a `C`, but its `T` is different. We can extract `T` with a match type that peels open the refinement:
+
+```scala 3
+type C_Of[t] = C { type T = t }
+type Extract_T[X <: C] = X match
+  case C_Of[t] => t
+
+tup.mapAs[C][Extract_T]([x <: C] => (x: x) => x.t)
+```
+
+Now `mapAs` knows that mapping over a `(C { type T = String }, C { type T = Int })` with `Extract_T` produces a
+`(String, Int)` — the abstract members are resolved at compile time.
+
+If you want to skip the helper types, a type projection does the same thing in one line:
+
+```scala 3
+tup.mapAs[C][[X <: C] =>> X#T]([x <: C] => (x: x) => x.t)
+```
+
+Either way, the key insight is the same: when the compiler can't infer `F`, you provide it — and that gives you access
+to surprisingly expressive mappings. I hope it will be inferred someday.
+
 ## Case Closed
 
 We went from runtime `ClassCastException` through match types, type classes, wrapper classes, opaque types,
 and finally arrived at a one-liner using clause interleaving. Each step taught us something about Scala 3's type
 system — and the last step reminded us to check if the language already has a simpler way.
 
-I'd like to use `containsOnly` and `mapAs` patterns in [M&DE](https://github.com/halotukozak/made), where typed pipelines
-need to transform homogeneous tuples of domain objects while preserving full type information. If you're building
-something similar, grab the code and adjust.
+I'd like to use `containsOnly` and `mapAs` patterns in [M&DE](https://github.com/halotukozak/made), where typed
+pipelines need to transform homogeneous tuples of domain objects while preserving full type information. If you're
+building something similar, grab the code and adjust.
 
 PS. Thesis defended. What do normal people do with their free time?
 
