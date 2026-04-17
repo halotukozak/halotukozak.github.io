@@ -103,7 +103,7 @@ const config: SiteConfig = {
     giscus: {
         repo: 'halotukozak/halotukozak.github.io',
         repoId: 'R_kgDOQLddvg',
-        category: 'Giscus',
+        category: 'General',
         categoryId: 'DIC_kwDOQLddvs4CxOEV',
         reactionsEnabled: true, // Enable reactions on post itself
     },
