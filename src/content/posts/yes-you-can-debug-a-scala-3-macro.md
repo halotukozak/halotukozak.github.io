@@ -25,8 +25,8 @@ I'd recommend starting with these four. They overlap in places, but each one int
   starting point if you've never touched a macro before.
 - [Rock the JVM — A Comprehensive Guide to Scala 3 Macros](https://rockthejvm.com/articles/rockthejvm-scala-3-macros-comprehensive-guide)
   — longest of the four, with worked examples.
-- [eed3si9n — Intro to Scala 3 Macros](https://eed3si9n.com/intro-to-scala-3-macros/) — concise, focused on the quote/
-  splice mental model.
+- [eed3si9n — Intro to Scala 3 Macros](https://eed3si9n.com/intro-to-scala-3-macros/) — concise, focused on the
+  quote/splice mental model.
 - [Official Scala 3 Macros Guide](https://docs.scala-lang.org/scala3/guides/macros/index.html) and
   the [Metaprogramming Reference](https://docs.scala-lang.org/scala3/reference/metaprogramming/index.html) — the
   official source.
@@ -85,17 +85,16 @@ trait IfMethods:
 Once you spot the pattern, the rest of the reflection API stops being a guessing game. The Scaladoc itself is packed
 with hints about invariants, tree shapes and idiomatic usage — far more than the guides on the website.
 
-When `Quotes.scala` runs out, the compiler source is the next stop, e.g. I've learned how
-to synthesise an anonymous class by reading
-[
+When `Quotes.scala` runs out, the compiler source is the next stop. For example, I've learned how to synthesise an
+anonymous class by reading [
 `tpd.scala`](https://github.com/scala/scala3/blob/6ac089a2528b67d0011cade2fb0f4d063fc26c74/compiler/src/dotty/tools/dotc/ast/tpd.scala).
 
 ### A Note on IDEs
 
-For macro-heavy code, VS Code with Metals has been less painful than IntelliJ. Sometimes (sic!) navigation is better,
-error messages are clearer, and there are files that compile fine in Metals but IntelliJ refuses to recognise. Syntax
-highlighting breaks on nested quotes; the formatter mangles code around splices. I still use IntelliJ for everything
-else.
+For macro-heavy code, VS Code with Metals has been less painful than IntelliJ. Sometimes (really sometimes) navigation
+is better, error messages are clearer, and there are files that compile fine in Metals but IntelliJ refuses to
+recognise. Syntax highlighting breaks on nested quotes; the formatter mangles code around splices. I still use
+IntelliJ for everything else.
 
 ## Measuring Where the Compiler Spends Time
 
@@ -153,9 +152,9 @@ Or this one, for when you're guessing at an AST shape:
 ```scala 3
 inline def showRawAst(inline body: Any) = ${ showRawAstImpl('{ body }) }
 
-def showRawAstImpl(body: Expr[Any])(using quotes: Quotes): Expr[Nothing] =
+def showRawAstImpl(body: Expr[Any])(using quotes: Quotes) =
   import quotes.reflect.*
-  report.error(Printer.TreeStructure.show(body.asTerm.underlyingArgument))
+  report.errorAndAbort(Printer.TreeStructure.show(body.asTerm.underlyingArgument))
 ```
 
 `showRawAst(someExpression)` aborts compilation with the raw `Apply(Select(Ident(...), ...), ...)` shape of the
@@ -201,10 +200,10 @@ sbt -jvm-debug 5005
 #### scala-cli
 
 ```bash
-# stop any running Bloop daemon (otherwise it'll reuse the old JVM without the agent)      
+# stop any running Bloop daemon (otherwise it'll reuse the old JVM without the agent)
 scala-cli --power bloop exit
 
-# compile, passing JDWP args to the new Bloop JVM 
+# compile, passing JDWP args to the new Bloop JVM
 scala-cli compile . --bloop-java-opt "-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=5005"
 ```
 
@@ -242,9 +241,9 @@ IntelliJ has no BSP-aware attach config for macros, so use the generic remote de
 1. Run -> Edit Configurations -> **+** -> Remote JVM Debug.
 2. Host `localhost`, port `5005`, "Attach to remote JVM", command line args for remote JVM auto-filled.
 3. Start to compile.
-4. Run -> Debug -> your new configuraton.
+4. Run -> Debug -> your new configuration.
 
-![intellij-debugger](yes-you-can-debug-a-scala-3-macro/intellij-debugger.png)
+![IntelliJ IDEA Remote JVM Debug configuration attached to the Scala compiler on port 5005](yes-you-can-debug-a-scala-3-macro/intellij-debugger.png)
 
 ## Case Closed
 
