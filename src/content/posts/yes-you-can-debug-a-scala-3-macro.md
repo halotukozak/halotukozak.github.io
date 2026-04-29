@@ -23,7 +23,7 @@ I'd recommend starting with these four. They overlap in places, but each one int
 
 - [SoftwareMill — Scala 3 Macros: Tips and Tricks](https://softwaremill.com/scala-3-macros-tips-and-tricks/) — the best
   starting point if you've never touched a macro before.
-- [Rock the JVM — A Comprehensive Guide to Scala 3 Macros](https://rockthejvm.com/articles/rockthejvm-scala-3-macros-comprehensive-guide)
+- [Rock the JVM — A Comprehensive Guide to Scala 3 Macros](https://rockthejvm.com/articles/scala-3-macros-comprehensive-guide)
   — longest of the four, with worked examples.
 - [eed3si9n — Intro to Scala 3 Macros](https://eed3si9n.com/intro-to-scala-3-macros/) — concise, focused on the
   quote/splice mental model.
@@ -253,7 +253,7 @@ See ya next time.
 ## References
 
 - [SoftwareMill — Scala 3 Macros: Tips and Tricks](https://softwaremill.com/scala-3-macros-tips-and-tricks/)
-- [Rock the JVM — A Comprehensive Guide to Scala 3 Macros](https://rockthejvm.com/articles/rockthejvm-scala-3-macros-comprehensive-guide)
+- [Rock the JVM — A Comprehensive Guide to Scala 3 Macros](https://rockthejvm.com/articles/scala-3-macros-comprehensive-guide)
 - [eed3si9n — Intro to Scala 3 Macros](https://eed3si9n.com/intro-to-scala-3-macros/)
 - [Official Scala 3 Macros Guide](https://docs.scala-lang.org/scala3/guides/macros/index.html)
 - [Metaprogramming Reference](https://docs.scala-lang.org/scala3/reference/metaprogramming/index.html)
