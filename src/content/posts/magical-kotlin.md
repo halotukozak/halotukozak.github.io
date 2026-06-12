@@ -335,7 +335,8 @@ internal class RootScope<out T>(val value: T, override val shortCircuit: Boolean
 }
 
 internal class FieldScope<out T>(
-    val value: T, name: String,
+    val value: T,
+    name: String,
     override val parent: ValidationScope<*>,
     override val shortCircuit: Boolean = parent.shortCircuit,
 ) : ChildrenScope<T>() {
@@ -343,7 +344,8 @@ internal class FieldScope<out T>(
 }
 
 internal class ItemScope<out T>(
-    val value: T, index: Int,
+    val value: T,
+    index: Int,
     override val parent: ValidationScope<*>,
     override val shortCircuit: Boolean = parent.shortCircuit,
 ) : ChildrenScope<T>() {
@@ -351,7 +353,8 @@ internal class ItemScope<out T>(
 }
 
 internal class EntryScope<out T>(
-    val value: T, key: Any?,
+    val value: T,
+    key: Any?,
     override val parent: ValidationScope<*>,
     override val shortCircuit: Boolean = parent.shortCircuit,
 ) : ChildrenScope<T>() {
