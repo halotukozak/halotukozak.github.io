@@ -698,6 +698,11 @@ It marks the class and, optionally, names an external validator object instead o
 annotation class Validatable(val with: KClass<out Validator<*>> = Validator::class)
 ```
 
+The shape is deliberately the same as `@Serializable` from `kotlinx.serialization`: tag a class, and a compile-time
+processor emits the boilerplate you'd otherwise hand-write — there `encodeToString`/`decodeFromString` wiring, here a
+`validate()` extension. Same ergonomics, same "no reflection, no runtime cost" promise; the only difference is that
+`kotlinx.serialization` ships a full compiler plugin while this is a few hundred lines of KSP.
+
 Turning that `@Validatable` into a real `validate()` is a compile-time job,
 and [KSP](https://kotlinlang.org/docs/ksp-overview.html) — Kotlin Symbol Processing — is the tool for it.
 It's the lightweight successor to `kapt`: instead of generating Java stubs and running a `javac` annotation processor,
@@ -705,83 +710,196 @@ KSP hands you a resolved view of the program's *Kotlin* symbols (classes, functi
 you emit new source files, which the compiler then picks up in the same build.
 No reflection, no runtime cost, no stub round-trip — the generated `validate()` is as if you'd typed it.
 
-The entry point is a `SymbolProcessorProvider` that builds a `SymbolProcessor`; the processor's `process` is the
-workhorse.
-KSP runs in *rounds* — `process` can be called again as new symbols appear — so a one-shot generator guards itself with
-a flag and returns deferred symbols (here, none):
+The processor isn't annotated or imported anywhere — KSP discovers it through a `META-INF/services` entry, a plain
+service-loader file naming the provider class:
+
+```
+# src/main/resources/META-INF/services/com.google.devtools.ksp.processing.SymbolProcessorProvider
+sure.ksp.ValidationExtensionProcessorProvider
+```
+
+The provider's only job is to hand KSP a `SymbolProcessor`, wired with the two services every processor leans on: a
+`CodeGenerator` to emit files and a `KSPLogger` to report problems back through the compiler.
 
 ```kotlin
 class ValidationExtensionProcessorProvider : SymbolProcessorProvider {
-    override fun create(env: SymbolProcessorEnvironment): SymbolProcessor =
-        ValidationExtensionProcessor(env.codeGenerator, env.logger)
-}
-
-// registered via META-INF/services so the KSP plugin discovers it
-```
-
-```kotlin
-private var generated = false
-
-override fun process(resolver: Resolver): List<KSAnnotated> {
-    if (generated) return emptyList()
-
-    val classes = resolver.getSymbolsWithAnnotation(ANNOTATION_FQN, false)
-        .filterIsInstance<KSClassDeclaration>().toList()
-    val refs = classes.mapNotNull { it.toValidatorRef() }
-    if (refs.isEmpty()) return emptyList()
-
-    codeGenerator.createNewFile(Dependencies(false, *originatingFiles), GENERATED_PACKAGE, GENERATED_FILE)
-        .use { OutputStreamWriter(it).use { w -> w.write(render(refs)) } }
-    generated = true
-    return emptyList()
+    override fun create(environment: SymbolProcessorEnvironment): SymbolProcessor =
+        ValidationExtensionProcessor(environment.codeGenerator, environment.logger)
 }
 ```
 
-`Dependencies(false, *originatingFiles)` is the incremental-build wiring: it tells KSP which source files the generated
-file derives from, so editing one `@Validatable` class regenerates only what's affected instead of the whole module.
-
-`toValidatorRef` is where the annotation is read.
-A `@Validatable` type names its validator one of two ways, and the processor resolves each by walking the KSP symbol
-tree rather than by reflection:
+One detail sets the tone for the whole processor: it works on *strings* KSP resolves for it, never on the `sure` types
+directly — the KSP module doesn't even depend on the runtime one. So the fully-qualified names it cares about are just
+constants:
 
 ```kotlin
-private fun KSClassDeclaration.toValidatorRef(): ValidatorRef? {
-    val receiverFqn = qualifiedName?.asString() ?: return null
-    // either @Validatable(with = SomeValidator::class), read off the annotation argument…
-    val validatorExpr = customValidatorFqn()
-    // …or a `validator` property on the companion object
-        ?: companionValidatorExpression(receiverFqn)
-        ?: return null   // neither → logger.error(), build fails
-    return ValidatorRef(receiverFqn, validatorExpr)
+private const val ANNOTATION_FQN = "sure.Validatable"
+private const val VALIDATOR_FQN = "sure.Validator"
+private const val VALIDATION_RESULT_FQN = "sure.ValidationResult"
+private const val GENERATED_PACKAGE = "sure"
+private const val GENERATED_FILE = "GeneratedValidationExtensions"
+private const val VALIDATOR_FIELD = "validator"
+private const val WITH_ARG = "with"
+```
+
+`process` is the workhorse. KSP runs in *rounds* — it calls `process` again whenever a round generated new symbols that
+themselves need processing — so a one-shot generator latches a `generated` flag and bails on re-entry. It asks the
+`Resolver` for every class carrying `@Validatable`, turns each into a small `ValidatorRef`, and writes one file:
+
+```kotlin
+private class ValidationExtensionProcessor(
+    private val codeGenerator: CodeGenerator,
+    private val logger: KSPLogger,
+) : SymbolProcessor {
+    private var generated = false
+
+    override fun process(resolver: Resolver): List<KSAnnotated> {
+        if (generated) return emptyList()
+
+        val classes = resolver.getSymbolsWithAnnotation(ANNOTATION_FQN, false)
+            .filterIsInstance<KSClassDeclaration>()
+            .toList()
+        if (classes.isEmpty()) return emptyList()
+
+        val refs = classes.mapNotNull { it.toValidatorRef() }
+        if (refs.isEmpty()) return emptyList()
+
+        val originatingFiles = classes.mapNotNull { it.containingFile }.distinct()
+        codeGenerator.createNewFile(
+            Dependencies(false, *originatingFiles.toTypedArray()),
+            GENERATED_PACKAGE,
+            GENERATED_FILE,
+        ).use { stream -> OutputStreamWriter(stream).use { it.write(render(refs)) } }
+
+        generated = true
+        return emptyList()
+    }
+```
+
+Three things in there carry weight. `getSymbolsWithAnnotation(ANNOTATION_FQN, false)` returns a flat sequence of
+annotated symbols — the `false` (`inDepth`) keeps it shallow, since `@Validatable` only ever lands on a top-level class,
+never nested inside another annotated one. The `List<KSAnnotated>` that `process` *returns* is KSP's deferral channel:
+symbols that couldn't be resolved this round and should be retried next one; a finished one-shot returns nothing.
+And `Dependencies(aggregating = false, *originatingFiles)` is the incremental-build wiring — it ties the generated file
+to the exact `@Validatable` sources it was built from, so editing one of them regenerates only what's affected instead
+of the whole module.
+
+`toValidatorRef` is where the annotation is read. A `@Validatable` type names its validator one of two ways, and the
+processor tries them in order — an explicit `with =` first, then the companion `validator` — walking the KSP symbol tree
+rather than reflecting. These are all extension functions on `KSClassDeclaration`, nested in the processor:
+
+```kotlin
+    private fun KSClassDeclaration.toValidatorRef(): ValidatorRef? {
+    val receiverFqn = qualifiedName?.asString() ?: run {
+        logger.warn("@Validatable type ${simpleName.asString()} has no qualified name", this)
+        return null
+    }
+    val validatorExpression = customValidatorFqn() ?: companionValidatorExpression(receiverFqn) ?: return null
+    return ValidatorRef(receiverFqn, validatorExpression)
 }
 ```
 
-Reading `with =` means resolving the annotation argument as a `KSType` and taking its qualified name; the companion path
-scans the class's declarations for a property called `validator`.
-If neither is present, the processor calls `logger.error(...)` with the offending class, which fails the build with a
-pointed message instead of emitting code that won't compile.
-
-There's no clever code generator behind `render` — it's a plain `buildString` that concatenates Kotlin source as text
-from the `(class, validator)` pairs it collected.
-No templating engine, no AST builder; it just prints the strings.
-For each `@Validatable` type it emits a `validate()` extension, plus a shared `validatorsByClass` map and a
-`reified validatorFor<T>()` lookup:
+The `with =` path has a wrinkle. KSP doesn't hand you a `KClass` — it hands you a `KSType`, a *symbol* in its model of
+the program, so you resolve the annotation, find the `with` argument, and read its declaration's qualified name. The
+catch is the default: `@Validatable` declares `with = Validator::class` as its "unset" sentinel, so a value equal to
+`sure.Validator` means *no custom validator was given* and the code returns `null` to fall through to the companion:
 
 ```kotlin
-fun com.example.LoginRequest.validate(): ValidationResult =
+    private fun KSClassDeclaration.customValidatorFqn(): String? {
+    val annotation = annotations.firstOrNull {
+        it.annotationType.resolve().declaration.qualifiedName?.asString() == ANNOTATION_FQN
+    } ?: return null
+
+    val withType = annotation.arguments
+        .firstOrNull { it.name?.asString() == WITH_ARG }
+        ?.value as? KSType ?: return null
+
+    val withFqn = withType.declaration.qualifiedName?.asString()
+    return withFqn?.takeUnless { it == VALIDATOR_FQN }   // default sentinel → not a custom validator
+}
+```
+
+The companion path scans the class's nested declarations for the companion object, then for a property named
+`validator`. A missing one isn't a reason to emit code that won't compile — it's a user mistake, so the processor
+`logger.error`s against the offending class and fails the build with a message that says exactly how to fix it:
+
+```kotlin
+    private fun KSClassDeclaration.companionValidatorExpression(receiverFqn: String): String? {
+    val companion = declarations.filterIsInstance<KSClassDeclaration>().firstOrNull { it.isCompanionObject }
+    val hasValidator = companion?.getAllProperties()?.any { it.simpleName.asString() == VALIDATOR_FIELD } == true
+    return if (!hasValidator) {
+        logger.error(
+            "@Validatable class ${simpleName.asString()} must declare a `$VALIDATOR_FIELD` property in its " +
+                    "companion object, or specify @Validatable($WITH_ARG = SomeObject::class)",
+            this,
+        )
+        null
+    } else {
+        "$receiverFqn.$VALIDATOR_FIELD"
+    }
+}
+```
+
+The `logger.warn` vs `logger.error` split is deliberate: a class with no qualified name (anonymous or local) is just
+skipped with a warning, but a `@Validatable` whose validator can't be resolved is a hard error that stops the build.
+
+There's no clever code generator behind `render`. It's a `buildString` that prints Kotlin source as text from the
+`(receiver, validator)` pairs — no templating engine, no AST builder, just `appendLine`. For each `@Validatable` type it
+emits a `validate()` extension, then one shared `validatorsByClass` map and a `reified validatorFor<T>()` lookup over
+it:
+
+```kotlin
+    private fun render(refs: List<ValidatorRef>): String = buildString {
+    appendLine("package $GENERATED_PACKAGE")
+    appendLine()
+    for (ref in refs) {
+        appendLine(
+            "fun ${ref.receiverFqn}.validate(): $VALIDATION_RESULT_FQN = " +
+                    "${ref.validatorExpression}.validate(this)",
+        )
+        appendLine()
+    }
+    appendLine("@PublishedApi")
+    appendLine("internal val validatorsByClass: Map<kotlin.reflect.KClass<*>, $VALIDATOR_FQN<*>> = mapOf(")
+    for (ref in refs) {
+        appendLine("    ${ref.receiverFqn}::class to ${ref.validatorExpression},")
+    }
+    appendLine(")")
+    appendLine()
+    appendLine("@Suppress(\"UNCHECKED_CAST\")")
+    appendLine("inline fun <reified T : Any> validatorFor(): $VALIDATOR_FQN<T> =")
+    appendLine("    validatorsByClass[T::class] as? $VALIDATOR_FQN<T>")
+    appendLine("        ?: error(\"No validator registered for \${T::class.qualifiedName}\")")
+}
+}
+
+private data class ValidatorRef(val receiverFqn: String, val validatorExpression: String)
+```
+
+Everything is a fully-qualified name because generated source has no imports to lean on — `$VALIDATION_RESULT_FQN`,
+`kotlin.reflect.KClass`, and the collected `receiverFqn`s all print in full so the file compiles wherever it lands.
+For one `@Validatable LoginRequest`, that produces a `sure/GeneratedValidationExtensions.kt` the compiler picks up in
+the same build:
+
+```kotlin
+package sure
+
+fun com.example.LoginRequest.validate(): sure.ValidationResult =
     com.example.LoginRequest.validator.validate(this)
 
 @PublishedApi
-internal val validatorsByClass: Map<KClass<*>, Validator<*>> = mapOf(
+internal val validatorsByClass: Map<kotlin.reflect.KClass<*>, sure.Validator<*>> = mapOf(
     com.example.LoginRequest::class to com.example.LoginRequest.validator,
 )
 
 @Suppress("UNCHECKED_CAST")
-inline fun <reified T : Any> validatorFor(): Validator<T> =
-    validatorsByClass[T::class] as? Validator<T>
+inline fun <reified T : Any> validatorFor(): sure.Validator<T> =
+    validatorsByClass[T::class] as? sure.Validator<T>
         ?: error("No validator registered for ${T::class.qualifiedName}")
 ```
 
+The `validate()` extension is what the call site at the very top of this post resolves to; `validatorFor<T>()` backs the
+type-keyed registry that `Validator` was made `reified` for back in Step 9.
 This is the Kotlin equivalent of Scala's automatic type-class derivation — except instead of inductive `given`s resolved
 by the compiler, it's a code generator emitting plain source.
 
@@ -870,12 +988,6 @@ machinery as a plain Kotlin/Java lambda, the runtime spins up the implementation
 `F & Any` erases to its ordinary bound — there's no special JVM type — so the guarantee is carried by `@Metadata` plus
 the occasional `Intrinsics.checkNotNullParameter` guard the compiler drops in at a public boundary. At runtime it's a
 plain non-null reference like any other.
-
-### Metadata and reflection
-
-Kotlin reflection reads from a hidden `@Metadata` annotation — protobuf-encoded type info (nullability, property kinds,
-the things the JVM erases).
-It's what lets `getOrCreateKotlinClass(User.class)` reconstruct the high-level `KClass<User>` the registry keys on.
 
 ## Case Closed
 
