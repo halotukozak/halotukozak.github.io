@@ -88,7 +88,8 @@ And nested objects don't compose — a `User` with an `Address` means another fu
 string-prefixing.
 
 Everything below is the slow dismantling of this function.
-Each fix removes one pain and, in doing so, drags in exactly one Kotlin feature.
+Each step removes one pain and, in doing so, drags in the Kotlin feature that fixes it — usually one, occasionally a
+small cluster that only makes sense together.
 
 ## Step 2: A scope to hold the errors
 
@@ -253,6 +254,9 @@ fun <T> check(predicate: (T) -> Boolean, onError: (T) -> String) {
 context(_: ValidationScope<String>)
 fun notBlank() = check<String>({ it.isBlank() }) { "must not be blank" }
 
+context(_: ValidationScope<String>)
+fun lengthIn(range: IntRange) = check<String>({ it.length !in range }) { "must be $range characters" }
+
 context(_: ValidationScope<T>)
 fun <T : Comparable<T>> inRange(range: ClosedRange<T>) = check({ it !in range }) { "must be in $range" }
 ```
@@ -281,6 +285,10 @@ You can't call the scope's members directly — `raise("…")` won't resolve in 
 not dispatch, and at the JVM level it lowers to an ordinary leading argument. A function can also ask for several
 context parameters at once — which is what lets a `field` block stay a plain extension on the scope while the value
 arrives as the lambda argument.
+
+> **Where we are.** The DSL reads `field(::name) { notBlank() }` — field named once, no `user ->`, checks resolve by
+> context. What's still missing: real DTOs nest (`address.zip`, `tags[2]`), have nullable fields, and sometimes want to
+> stop at the first error. The next steps add those, one at a time.
 
 ## Step 5: Nesting — the sealed scope family and the `value` contract
 
@@ -577,6 +585,13 @@ internal actual class ScopeShortCircuit actual constructor() :
 ```
 
 The strategy is toggled per validator with `failFast()` / `accumulating()`, which rebuild it with a different flag.
+
+> **Where we are.** The rule language is done: nesting with correct paths, `@DslMarker` safety, `optional`/`field` for
+> nullables, `anyOf`/`not`, and fail-fast. Every pain from the hand-rolled Step 1 function is now gone.
+
+The remaining steps change register. Steps 1–9 fixed *pains*; from here on the rules are settled and the work is
+dressing them in a public API — make `Validator` findable by type, translate messages, and finally generate
+`validate()`. Same library, outer layer.
 
 ## Step 10: The Validator class — inline, reified, noinline
 
@@ -965,12 +980,10 @@ It's what lets `getOrCreateKotlinClass(User.class)` reconstruct the high-level `
 ## Case Closed
 
 The library is, structurally, a type class: type-indexed dispatch (`validatorFor<T>()`), behavior parameterized by type,
-and — via KSP — *derivation*.
-Where the Scala version of this story leans on `Mirror`s and inductive `given`s, Kotlin gets there with context
-parameters for composition, definitely-non-null types and contracts for safety, and a KSP code generator for the
-derivation.
+and — via KSP — *derivation*. Where the Scala version of this story leans on `Mirror`s and inductive `given`s, Kotlin
+gets there with context parameters and a KSP code generator for the derivation.
 
-None of these features is exotic on its own.
-Stacked together, they let Kotlin pull off the kind of type-level trick that used to be Scala's home turf.
+As it turns out, Kotlin can be scary too.
+
 The full source — multiplatform targets, every built-in check, the KSP processor, tests — is
 at [github.com/halotukozak/sure](https://github.com/halotukozak/sure).
