@@ -3,7 +3,7 @@ title: 'Method too large'
 description: 'How to work around the JVM 64KB method size limit when generating code with Scala 3 macros, using local method chunking to split large generated methods.'
 published: 2025-10-30
 draft: false
-tags: [ 'scala', 'macro', 'jvm', 'scala-3', 'bytecode' ]
+tags: [ 'Scala', 'macro', 'metaprogramming', 'JVM', 'Scala 3', 'bytecode' ]
 toc: true
 ---
 

@@ -2,7 +2,7 @@
 title: 'Yes, You Can Debug a Scala 3 Macro'
 description: 'How to debug Scala 3 macros: profiling the compiler, print-debug helpers for types and ASTs, and attaching a JVM debugger to the compiler from Mill, sbt, scala-cli, VS Code or IntelliJ.'
 published: 2026-04-28
-tags: [ 'scala', 'scala-3', 'macro', 'metaprogramming', 'debugging', 'tooling' ]
+tags: [ 'Scala', 'Scala 3', 'macro', 'metaprogramming', 'debugging' ]
 toc: true
 ---
 

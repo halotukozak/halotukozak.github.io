@@ -3,7 +3,7 @@ title: 'Homogeneous Tuples in Scala 3'
 description: 'How to prove at compile time that a Scala 3 tuple contains only elements of a single type, using match types, opaque types, and clause interleaving.'
 published: 2026-04-06
 draft: false
-tags: [ 'scala', 'scala-3', 'tuple', 'compile-time', 'type-safety' ]
+tags: [ 'Scala', 'Scala 3', 'tuple', 'compile-time', 'type-safety' ]
 toc: true
 ---
 

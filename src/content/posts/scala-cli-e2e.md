@@ -3,7 +3,7 @@ title: 'scala-cli E2E Repo Setup'
 description: 'A complete guide to setting up a Scala library project with scala-cli — formatting, testing, code coverage, Maven Central publishing, GitHub Actions CI, and Scaladoc deployment.'
 published: 2026-03-02
 draft: false
-tags: [ 'scala', 'scala-cli', 'devops', 'ci', 'github-actions', 'testing' ]
+tags: [ 'Scala', 'scala-cli', 'Scala 3', 'CI/CD', 'testing' ]
 toc: true
 ---
 

@@ -2,7 +2,7 @@
 title: 'Scala Type Class Derivation with (almost) no macros'
 description: 'Automating type class derivation in Scala 3 using the Mirror API and compiletime utilities — replacing complex Scala 2 macro code with readable, type-safe compile-time logic.'
 published: 2026-02-01
-tags: [ 'scala', 'type class', 'compile-time', 'scala-3', 'derivation', 'serialization' ]
+tags: [ 'Scala', 'type class', 'compile-time', 'Scala 3', 'derivation' ]
 toc: true
 ---
 
