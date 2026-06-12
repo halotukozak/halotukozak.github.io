@@ -939,8 +939,16 @@ type-keyed registry that `Validator` was made `reified` for back in Step 9. The 
 closes a small loop with it — because every `@Validatable` type is in the registry, a nested field can pull its
 sub-validator by type with no explicit reference, exactly the call the two snippets above use.
 
+That convenience comes with a caveat worth stating plainly: `validatorFor<F>()` is a *runtime* map lookup, not a
+compile-time guarantee. `validated(::address)` type-checks whether or not an `Address` validator was ever registered;
+if the field's type isn't `@Validatable` (or its module wasn't on the path when the registry was generated), the
+lookup misses and `error(...)` throws at validation time. The explicit `validated(::address, Address.validator)` form
+keeps that honest — passing the validator directly is checked by the compiler. So this is the usual derivation
+trade-off: the zero-argument overload is convenient, the explicit one is statically safe.
+
 This is the Kotlin equivalent of Scala's automatic type-class derivation — except instead of inductive `given`s resolved
-by the compiler, it's a code generator emitting plain source.
+by the compiler, it's a code generator emitting plain source. The same trade-off shows up there too: Scala's implicit
+resolution fails the *compile*, whereas this registry lookup can only fail at runtime.
 
 That closes the loop: the public API from the very top of this post is now fully assembled.
 
