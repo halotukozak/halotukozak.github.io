@@ -33,7 +33,7 @@ LoginRequest("alice", "hunter22!").validate() // ValidationResult.Valid
 ```
 
 No reflection on user types, no string field names — and that `validate()` isn't hand-written.
-A KSP processor generates it at compile time (Step 14); everything between here and there is how the pieces it relies on
+A KSP processor generates it at compile time; everything between here and there is how the pieces it relies on
 get built.
 
 ### A Note on Valiktor
@@ -41,25 +41,18 @@ get built.
 What I built looks a lot like [Valiktor](https://github.com/valiktor/valiktor).
 I found it after I'd written most of this.
 Valiktor predates context parameters and definitely-non-null types, so its API carries more boilerplate.
-This post is not "Valiktor but better."
-It is the path I'd walk building the same thing today.
 
 ## Setup
 
 Everything below uses Kotlin **2.4.0**.
-Context parameters are stable there — no compiler flag, no opt-in.
-If you're on an older version you'll need `-Xcontext-parameters`, and on much older ones you might know them as
-`context receivers` — different syntax, same mental model.
 
-I'll build the library one feature at a time, and every step is provoked by a concrete pain in the step before it —
-nothing appears until something forces it to.
-To keep each snippet self-contained, the early steps carry error messages as plain `String`s; [
-`sure`](https://github.com/halotukozak/sure) itself uses a structured `Message` type and splits a couple of declarations
-across platforms, both of which I fold in near the end.
-The data class under validation is the same throughout:
+I'll build the library from scratch — one feature at a time, starting from the simplest function that works and pulling
+in a new mechanism only when the previous step's pain forces it, until we reach the final API.
+The same example types ride through every step:
 
 ```kotlin
-data class User(val name: String, val age: Int)
+data class Address(val city: String, val zip: String)
+data class User(val name: String, val age: Int, val address: Address)
 ```
 
 ## Step 1: The hand-rolled version
@@ -76,6 +69,9 @@ fun validateUser(user: User): List<String> {
     }
     if (user.age !in 0..150) errors += "age: must be in 0..150"
 
+    if (user.address.city.isBlank()) errors += "address.city: must not be blank"
+    if (user.address.zip.length != 5) errors += "address.zip: must be 5 digits"
+
     return errors
 }
 ```
@@ -84,12 +80,8 @@ It works, but it hurts.
 The error list is hand-threaded through every branch.
 Field names are strings.
 Each rule re-states the field it talks about.
-And nested objects don't compose — a `User` with an `Address` means another function, another list, another round of
-string-prefixing.
-
-Everything below is the slow dismantling of this function.
-Each step removes one pain and, in doing so, drags in the Kotlin feature that fixes it — usually one, occasionally a
-small cluster that only makes sense together.
+And the nested `Address` doesn't compose — every check on it re-states the `address.` prefix by hand, and a second level
+of nesting would mean another prefix on top, with nothing to stop a typo in either.
 
 ## Step 2: A scope to hold the errors
 
@@ -111,7 +103,8 @@ That `field = mutableListOf()` under the property is not a typo — it's an **ex
 Kotlin 2.4 (experimental behind `-Xexplicit-backing-fields` in 2.3). It lets a `val` declare two types: a public one and
 the one the field actually holds.
 Here the public type is `List<String>`, but inside the class the name `errors` resolves to the `MutableList` behind it —
-so callers get a read-only view while `raise` still appends, with no `_errors`-plus-getter dance.
+so callers get a read-only view while `raise` still appends, with no "private `_errors` plus public getter `erorrs`"
+template.
 
 To run rules against a scope, I take a lambda with the scope as its receiver — that lambda *is* the validator:
 
@@ -131,9 +124,12 @@ The call site already reads better — no list to declare, no list to return:
 val userValidator = Validator<User> {
     if (value.name.isBlank()) raise("name: must not be blank")
     if (value.age !in 0..150) raise("age: must be in 0..150")
+    if (value.address.city.isBlank()) raise("address.city: must not be blank")
+    if (value.address.zip.length != 5) raise("address.zip: must be 5 digits")
 }
 
-userValidator.validate(User("", 200)) // [name: must not be blank, age: must be in 0..150]
+userValidator.validate(User("", 200, Address("Kraków", "30")))
+// [name: must not be blank, age: must be in 0..150, address.zip: must be 5 digits]
 ```
 
 `rules: ValidationScope<T>.() -> Unit` is a *function with receiver*: inside the braces, `this` is the scope, so `value`
@@ -200,6 +196,10 @@ The field name is written once now, as a bound reference:
 val userValidator = Validator<User> { user ->
     field(user::name) { notBlank() }
     field(user::age) { inRange(0..150) }
+    field(user::address) { address ->
+        field(address::city) { notBlank() }
+        field(address::zip) { notBlank() }
+    }
 }
 ```
 
@@ -215,10 +215,9 @@ For `::name` to resolve, `this` inside the block has to be the `User` — but th
 `raise`.
 That's two receivers at once, and an ordinary `T.() -> Unit` only gives you one.
 
-Carrying an implicit dependency like this is one of the things **context parameters** are good for — not the only one,
-but the one that fits here.
+Carrying an implicit dependency like this is one of the things **context parameters** are good for.
 A context parameter is a dependency a function declares without making it *the* receiver.
-The rules block becomes "an extension on the value, with a scope available in context":
+The rules block becomes an extension on the value, with a scope available in context:
 
 ```kotlin
 class Validator<T>(private val rules: context(ValidationScope<T>) T.() -> Unit) {
@@ -261,12 +260,17 @@ context(_: ValidationScope<T>)
 fun <T : Comparable<T>> inRange(range: ClosedRange<T>) = check({ it !in range }) { "must be in $range" }
 ```
 
-The call site loses both the `user ->` and the repeated receiver:
+The top-level call site loses both the `user ->` and the repeated receiver — only a nested `field` still names its value
+(`address ->`), because a `field` block hands the value in as its lambda argument rather than as `this`:
 
 ```kotlin
 val userValidator = Validator<User> {
     field(::name) { notBlank() }
     field(::age) { inRange(0..150) }
+    field(::address) { address ->
+        field(address::city) { notBlank() }
+        field(address::zip) { lengthIn(5..5) }
+    }
 }
 ```
 
@@ -286,15 +290,12 @@ not dispatch, and at the JVM level it lowers to an ordinary leading argument. A 
 context parameters at once — which is what lets a `field` block stay a plain extension on the scope while the value
 arrives as the lambda argument.
 
-> **Where we are.** The DSL reads `field(::name) { notBlank() }` — field named once, no `user ->`, checks resolve by
-> context. What's still missing: real DTOs nest (`address.zip`, `tags[2]`), have nullable fields, and sometimes want to
-> stop at the first error. The next steps add those, one at a time.
-
 ## Step 5: Nesting — the sealed scope family and the `value` contract
 
-`field` descends one level.
-The real test is depth, where errors must report a sensible path — `address.zip`, `tags[2]`, `headers[Accept]` — and
-each kind of descent builds that path differently.
+Stacking `field` already nests one object in another — `address.city` works because each call extends the parent's path
+with `.name`.
+The real test is collections, where errors must still report a sensible path — `tags[2]`, `headers[Accept]` — but each
+kind of descent builds that path differently.
 A single `ValidationScope` class can't express "append `.name`" vs "append `[index]`" vs "append `[key]`" cleanly, so I
 split it into a small two-tier family.
 The base declares the contract; one intermediate owns the error list, the other forwards errors to its parent; and a
