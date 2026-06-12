@@ -392,10 +392,6 @@ A **contract** delivers that. It's a promise the getter makes to the compiler, s
 "the non-null version of an unbounded generic `T`" — for nullable `T = X?` it's `X`, for already-non-null `T` it
 collapses to `T`.
 
-A contract can refine the type of the *receiver*, and the receiver here is the scope — which is the one reason this is
-an *extension property*, not a base member. The body is a plain exhaustive `when`, no `else`, because the base is
-`sealed`:
-
 [//]: # (@formatter:off)
 ```kotlin
 @OptIn(ExperimentalContracts::class)
@@ -415,6 +411,14 @@ val <T> ValidationScope<T>.value: T
     }
 ```
 [//]: # (@formatter:on)
+
+Why an extension and not a member?
+The base scope owns no `value` — each leaf declares its own — so as a member, `value` would have to be `abstract` on
+`ValidationScope`. And Kotlin forbids contracts on `abstract` (or `open`) declarations: a `contract { }` describes one
+concrete body, but an abstract member has none, and an open one could be overridden out from under its promise. An
+extension is neither — it's a single final function with a real body, the exhaustive `when` that reconstructs `value`
+from whichever leaf `this` happens to be. That's the form a `contract { }` is allowed on, and its receiver parameter is
+what `returnsNotNull() implies (this@value is ValidationScope<T & Any>)` smart-casts.
 
 In Step 7 this same contract lets one helper handle nullable and non-nullable fields with no cast.
 
@@ -590,8 +594,8 @@ internal actual class ScopeShortCircuit actual constructor() :
 
 The strategy is toggled per validator with `failFast()` / `accumulating()`, which rebuild it with a different flag.
 
-> **Where we are.** The rule language is done: nesting with correct paths, `@DslMarker` safety, `optional`/`field` for
-> nullables, `anyOf`/`not`, and fail-fast. Every pain from the hand-rolled Step 1 function is now gone.
+The rule language is done: nesting with correct paths, `@DslMarker` safety, `optional`/`field` for
+nullables, `anyOf`/`not`, and fail-fast. Every pain from the hand-rolled Step 1 function is now gone.
 
 The remaining steps change register. Steps 1–9 fixed *pains*; from here on the rules are settled and the work is
 dressing them in a public API — make `Validator` findable by type, translate messages, and finally generate
@@ -628,6 +632,19 @@ Three deliberate keywords:
   object in bytecode, and inlined lambdas don't — their bodies are copied into the call site with nothing left to store.
 - The rules type `context(ValidationScope<T>) T.() -> Unit` is the same context-plus-receiver shape from Step 4, now at
   the top level — `this` is the value, the scope is in context.
+
+Three smaller choices in the signature are worth a line each:
+
+- **`KClass<T & Any>`**, not `KClass<T>`. The class leaves `T` unbounded so it can wrap a nullable target, but
+  `KClass`'s own parameter is `Any`-bounded — there's no `KClass` of a nullable type. `T::class` already produces a
+  `KClass<T & Any>`, so the definitely-non-null projection is the only thing that fits the field.
+- **`operator fun invoke`** on the companion, instead of a plain constructor. Building a `Validator` needs `T::class`,
+  which needs `reified`, which needs `inline` — and a constructor can be none of those. So the real entry point has to
+  be an inline reified factory function. Naming it `invoke` on the companion keeps the constructor-like call site:
+  `Validator<User> { … }` resolves to `Validator.Companion.invoke<User>(…)`, so nothing at the call site has to change.
+- **`open`** class with an **`open fun validate`**. `@Validatable(with = …)` (Step 14) lets a caller register a custom
+  `Validator` subclass in place of the default, and that's only possible if the class can be extended and `validate`
+  overridden — a `final` class would slam the door.
 
 ## Step 11: Validating an Any — the isInstanceOf contract
 
