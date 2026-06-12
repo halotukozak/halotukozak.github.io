@@ -290,7 +290,7 @@ not dispatch, and at the JVM level it lowers to an ordinary leading argument. A 
 context parameters at once — which is what lets a `field` block stay a plain extension on the scope while the value
 arrives as the lambda argument.
 
-## Step 5: Nesting — the sealed scope family and the `value` contract
+## Step 5: Nesting — the sealed scope family and the value contract
 
 Stacking `field` already nests one object in another — `address.city` works because each call extends the parent's path
 with `.name`.
@@ -377,7 +377,7 @@ Errors are now a small type instead of a bare string, so the path rides along (t
 data class ValidationError(val path: String, val message: String)
 ```
 
-### The `value` contract
+### The value contract
 
 Start with the payoff, because the syntax below only makes sense once you know what it buys.
 Picture a user validating a nullable field — `optional(::nickname) { … }` where `nickname: String?`. Inside that block
@@ -459,7 +459,7 @@ After it, reaching an outer scope from a nested block is a compile error unless 
 `this@Validator.raise(...)`).
 You only ever see the innermost scope by default — which is what you wanted.
 
-## Step 7: Nullable fields — `field` vs `optional`
+## Step 7: Nullable fields — field vs optional
 
 So far `field` assumed a non-null property.
 Real DTOs have nullable fields, with two sensible behaviors: *skip if null* (`optional`), or *fail if null* (a required
@@ -629,7 +629,7 @@ Three deliberate keywords:
 - The rules type `context(ValidationScope<T>) T.() -> Unit` is the same context-plus-receiver shape from Step 4, now at
   the top level — `this` is the value, the scope is in context.
 
-## Step 11: Validating an `Any` — the isInstanceOf contract
+## Step 11: Validating an Any — the isInstanceOf contract
 
 The point of the registry is to validate a value you only know as `Any?`.
 After a runtime type check I want to use it as `T` without an unchecked cast — and a contract buys that:
@@ -757,7 +757,7 @@ override fun raise(message: Message) = raise(ValidationError.Element(parent.path
 
 Every `check` now returns a `Message` instead of a `String`; the rest of the structure is untouched.
 
-## Step 14: @Validatable + KSP — generating `validate()`
+## Step 14: @Validatable + KSP — generating validate()
 
 One pain is left: calling `someValidator.validate(req)` by hand and wiring up a registry.
 The shape I'm after is the one from the very top of this post — tag a class `@Validatable`, point it at its validator,
