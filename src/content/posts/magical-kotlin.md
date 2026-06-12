@@ -1,9 +1,9 @@
 ---
 title: 'Magical Kotlin: Building a Type-Safe Validation DSL'
-description: 'A walking tour of context parameters, KProperty0, definitely-non-null types, contracts, sealed scopes, fun interface, inline+reified, expect/actual, @JvmName and KSP — by building a multiplatform validation DSL from scratch.'
+description: 'A walking tour of context parameters, KProperty0, definitely-non-null types, contracts, sealed scopes, explicit backing fields, fun interface, inline+reified, expect/actual, @JvmName and KSP — by building a multiplatform validation DSL from scratch.'
 published: 2026-06-10
 draft: false
-tags: [ 'kotlin', 'dsl', 'validation', 'context-parameters', 'metaprogramming', 'contracts', 'ksp', 'type-class' ]
+tags: [ 'kotlin', 'dsl', 'validation', 'context-parameters', 'metaprogramming', 'contracts', 'backing-fields', 'ksp', 'type-class' ]
 toc: true
 ---
 
@@ -50,6 +50,8 @@ Everything below uses Kotlin **2.4.0**.
 Context parameters are stable there — no compiler flag, no opt-in.
 If you're on an older version you'll need `-Xcontext-parameters`, and on much older ones you might know them as
 `context receivers` — different syntax, same mental model.
+One other trick below — explicit backing fields, for giving a property a public read-only type over a private mutable
+one.
 
 I'll build the library one feature at a time, and every step is provoked by a concrete pain in the step before it —
 nothing appears until something forces it to.
@@ -98,15 +100,20 @@ The scope holds the value being checked and owns the error list, so rules just c
 
 ```kotlin
 class ValidationScope<T>(val value: T) {
-    val errors = mutableListOf<String>()
+    val errors: List<String>
+        field = mutableListOf()
     fun raise(message: String) {
         errors += message
     }
 }
 ```
-//fix: errors powinno byc ukryte za pomoca backing fields
+
+`errors` uses an **explicit backing field**.
+The property's public type is `List<String>`, but inside the class the name `errors` resolves to the `MutableList`
+behind it — so callers get a read-only view while `raise` still appends, with no `_errors`-plus-getter dance.
 
 To run rules against a scope, I take a lambda with the scope as its receiver — that lambda *is* the validator:
+
 ```kotlin
 class Validator<T>(private val rules: ValidationScope<T>.() -> Unit) {
     fun validate(value: T): List<String> {
@@ -207,7 +214,8 @@ For `::name` to resolve, `this` inside the block has to be the `User` — but th
 `raise`.
 That's two receivers at once, and an ordinary `T.() -> Unit` only gives you one.
 
-This is what **context parameters** are for. // fix: for example, it not the only reason, i think
+Carrying an implicit dependency like this is one of the things **context parameters** are good for — not the only one,
+but the one that fits here.
 A context parameter is a dependency a function declares without making it *the* receiver.
 The rules block becomes "an extension on the value, with a scope available in context":
 
@@ -270,48 +278,75 @@ the value arrives as the lambda argument.
 The real test is depth, where errors must report a sensible path — `address.zip`, `tags[2]`, `headers[Accept]` — and
 each kind of descent builds that path differently.
 A single `ValidationScope` class can't express "append `.name`" vs "append `[index]`" vs "append `[key]`" cleanly, so I
-split it into a family: a base that carries the path and the error plumbing, and a subclass per nesting kind.
+split it into a small two-tier family.
+The base declares the contract; one intermediate owns the error list, the other forwards errors to its parent; and a
+leaf per nesting kind only has to say how it builds its `path`.
 
 The base also gains a `shortCircuit` flag here; ignore it
 until [Step 9](#step-9-fail-fast--short-circuiting-across-platforms), where it earns its keep.
 
 ```kotlin
 @ValidationDsl
-sealed class ValidationScope<out T>(
-    internal val path: String,
-    @PublishedApi internal val shortCircuit: Boolean,
-) {
+sealed class ValidationScope<out T> {
+    internal abstract val path: String
+
+    @PublishedApi
+    internal abstract val shortCircuit: Boolean
     internal abstract fun addError(error: ValidationError)
-    abstract fun raise(message: String)
+
+    fun raise(message: String) = addError(ValidationError(path, message))
 }
 
-internal class RootScope<out T>(val value: T, shortCircuit: Boolean) :
-    ValidationScope<T>("", shortCircuit) {
-    private val _errors = mutableListOf<ValidationError>()
-    val errors: List<ValidationError> get() = _errors
-    override fun addError(error: ValidationError) {
-        _errors += error
+// owns the error list — RootScope, and the throwaway EphemeralScope from Step 8
+sealed class ParentScope<out T> : ValidationScope<T>() {
+    val errors: List<ValidationError>
+        field = mutableListOf()
+    final override fun addError(error: ValidationError) {
+        errors += error
     }
-    override fun raise(message: String) = addError(ValidationError(path, message))
+}
+
+// no list of its own — forwards every error up to its parent
+sealed class ChildrenScope<out T> : ValidationScope<T>() {
+    abstract val parent: ValidationScope<*>
+    final override fun addError(error: ValidationError) = parent.addError(error)
+}
+
+internal class RootScope<out T>(val value: T, override val shortCircuit: Boolean) : ParentScope<T>() {
+    override val path = ""
 }
 
 internal class FieldScope<out T>(
-    val value: T, name: String, private val parent: ValidationScope<*>,
-    shortCircuit: Boolean = parent.shortCircuit,
-) : ValidationScope<T>(if (parent.path.isEmpty()) name else "${parent.path}.$name", shortCircuit) {
-    override fun addError(error: ValidationError) = parent.addError(error)   // delegate up
-    override fun raise(message: String) = addError(ValidationError(path, message))
+    val value: T, name: String,
+    override val parent: ValidationScope<*>,
+    override val shortCircuit: Boolean = parent.shortCircuit,
+) : ChildrenScope<T>() {
+    override val path = if (parent.path.isEmpty()) name else "${parent.path}.$name"
 }
 
-internal class ItemScope<out T>(val value: T, index: Int, parent: ValidationScope<*>, /* … */) :
-    ValidationScope<T>("${parent.path}[$index]", /* … */)   // delegates to parent
-internal class EntryScope<out T>(val value: T, key: Any?, parent: ValidationScope<*>, /* … */) :
-    ValidationScope<T>("${parent.path}[$key]", /* … */)     // delegates to parent
+internal class ItemScope<out T>(
+    val value: T, index: Int,
+    override val parent: ValidationScope<*>,
+    override val shortCircuit: Boolean = parent.shortCircuit,
+) : ChildrenScope<T>() {
+    override val path = "${parent.path}[$index]"
+}
+
+internal class EntryScope<out T>(
+    val value: T, key: Any?,
+    override val parent: ValidationScope<*>,
+    override val shortCircuit: Boolean = parent.shortCircuit,
+) : ChildrenScope<T>() {
+    override val path = "${parent.path}[$key]"
+}
 ```
 
-//fix: mozesz uzyc explciit bakcing fields
-// val errors: List<ValidationError>
-//        field = mutableListOf<ValidationError>()
+Two intermediate classes carry all the plumbing.
+`ParentScope` owns the list — behind the explicit backing field from Step 2, so `addError` appends internally while
+callers only read — and `ChildrenScope` forwards `addError` to its `parent`, so every nested error bubbles up to the one
+`RootScope` at the top.
+A leaf then declares only its `path` and holds its `value`; `raise` lives once, on the base.
+Both intermediates and the base are `sealed`, which matters for the accessor next.
 
 Errors are now a small type instead of a bare string, so the path rides along (this becomes a sealed type with `Field`/
 `Element`/`Root` cases in [Step 13](#step-13-structured-translatable-messages--fun-interface)):
@@ -320,7 +355,6 @@ Errors are now a small type instead of a bare string, so the path rides along (t
 data class ValidationError(val path: String, val message: String)
 ```
 
-Only `RootScope` owns the list; every other scope delegates `addError` to its parent.
 But splitting the class created a problem: `value` used to live on the one `ValidationScope`, and now it's scattered
 across the subclasses — and `check` does `scope.value`.
 
@@ -329,22 +363,25 @@ needs no `else`.
 That's `sealed`.
 I keep the accessor as an *extension property* rather than a base member, for a reason that's about to pay off:
 
+[//]: # (@formatter:off)
 ```kotlin
 @OptIn(ExperimentalContracts::class)
 val <T> ValidationScope<T>.value: T
-get() {
-    contract {
-        returnsNotNull() implies (this@value is ValidationScope<T & Any>)
+    get() {
+        contract {
+            returnsNotNull() implies (this@value is ValidationScope<T & Any>)
+        }
+
+        return when (this) {
+            is RootScope -> value
+            is FieldScope -> value
+            is ItemScope -> value
+            is EntryScope -> value
+            is EphemeralScope -> value
+        }
     }
-    return when (this) {
-        is RootScope -> value
-        is FieldScope -> value
-        is ItemScope -> value
-        is EntryScope -> value
-        is EphemeralScope -> value   // arrives in Step 8
-    }
-}
 ```
+[//]: # (@formatter:on)
 
 The `when` is exhaustive with no `else` because the base is `sealed`.
 
@@ -437,18 +474,18 @@ No casts anywhere — `F & Any` does the narrowing in the type, the Step 5 contr
 
 Some combinators don't want their inner errors recorded — they only care *whether* the inner rules passed.
 `anyOf` succeeds if any branch is clean; `not` succeeds if its rule fails.
-Both run rules against a throwaway scope whose errors never reach the parent — the fifth member of the family,
-`EphemeralScope`, with its own private list:
+Both run rules against a throwaway scope whose errors never reach the parent.
+This is the fifth scope, and it falls straight out of the Step 5 split: it *owns* its errors rather than forwarding
+them, so it's a `ParentScope`, and that's the entire definition — the list, the backing field, and `addError` are all
+inherited.
 
 ```kotlin
-internal class EphemeralScope<out T>(val value: T, parent: ValidationScope<*>, /* … */) :
-    ValidationScope<T>(parent.path, /* … */) {
-    private val _errors = mutableListOf<ValidationError>()
-    val errors: List<ValidationError> get() = _errors
-    override fun addError(error: ValidationError) {
-        _errors += error
-    }   // kept local
-    override fun raise(message: String) = addError(ValidationError(path, message))
+internal class EphemeralScope<out T>(
+    val value: T,
+    parent: ValidationScope<*>,
+    override val shortCircuit: Boolean = parent.shortCircuit,
+) : ParentScope<T>() {
+    override val path = parent.path
 }
 
 context(scope: ValidationScope<T>)
@@ -479,10 +516,13 @@ Fail-fast has to unwind out of arbitrarily nested blocks back to the nearest bou
 mechanism is an exception — one that's cheap and never looks like a real error.
 Kotlin's coroutine `CancellationException` is exactly that.
 
-`raise` (the protected one on the base) throws it when `shortCircuit` is on, which is why the base carried that flag
-since Step 5:
+The public `raise(message)` from Step 5 now routes through a protected `raise(error)` that throws when `shortCircuit` is
+on — which is why the base carried that flag since Step 5:
 
 ```kotlin
+// on ValidationScope
+fun raise(message: String) = raise(ValidationError(path, message))
+
 protected fun raise(error: ValidationError) {
     addError(error)
     if (shortCircuit) throw ScopeShortCircuit()
@@ -660,15 +700,55 @@ sealed interface ValidationError {
 }
 ```
 
-Every `check`, every scope's `raise`, now carries a `Message` instead of a `String`; nothing else about the structure
-changes.
+This is the one place the Step 5 split shows a seam.
+With a single `ValidationError(path, message)`, `raise` could live once on the base.
+Now the *case* depends on the scope — `Root` for root and ephemeral scopes, `Field` for a field or map entry,
+`Element` (with its index) for a list item — so `raise(message: Message)` goes back to `abstract` on the base, and each
+leaf builds its own:
+
+```kotlin
+abstract fun raise(message: Message)   // on ValidationScope, replacing the String version
+
+// RootScope, EphemeralScope
+override fun raise(message: Message) = raise(ValidationError.Root(message))
+
+// FieldScope, EntryScope
+override fun raise(message: Message) = raise(ValidationError.Field(path, message))
+
+// ItemScope
+override fun raise(message: Message) = raise(ValidationError.Element(parent.path, index, message))
+```
+
+Every `check` now returns a `Message` instead of a `String`; the rest of the structure is untouched.
 
 ## Step 14: @Validatable + KSP — generating `validate()`
 
 One pain is left: calling `someValidator.validate(req)` by hand and wiring up a registry.
-I want `req.validate()` to just exist.
+The shape I'm after is the one from the very top of this post — tag a class `@Validatable`, point it at its validator, and get a `validate()` extension for free:
 
-[KSP](https://kotlinlang.org/docs/ksp-overview.html) — Kotlin Symbol Processing — is the tool for that.
+```kotlin
+@Validatable
+data class LoginRequest(val username: String, val password: String) {
+    companion object {
+        val validator = Validator<LoginRequest> {
+            field(::username) { notBlank(); lengthIn(1..254) }
+            field(::password) { notBlank(); lengthIn(8..1024) }
+        }
+    }
+}
+
+LoginRequest("alice", "hunter22!").validate()   // ValidationResult — nothing hand-wired
+```
+
+The annotation itself is tiny.
+It marks the class and, optionally, names an external validator object instead of the companion `validator`:
+
+```kotlin
+@Target(AnnotationTarget.CLASS)
+annotation class Validatable(val with: KClass<out Validator<*>> = Validator::class)
+```
+
+Turning that `@Validatable` into a real `validate()` is a compile-time job, and [KSP](https://kotlinlang.org/docs/ksp-overview.html) — Kotlin Symbol Processing — is the tool for it.
 It's the lightweight successor to `kapt`: instead of generating Java stubs and running a `javac` annotation processor,
 KSP hands you a resolved view of the program's *Kotlin* symbols (classes, functions, properties, annotations) and lets
 you emit new source files, which the compiler then picks up in the same build.
