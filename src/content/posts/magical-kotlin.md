@@ -878,6 +878,43 @@ compiler will let you write, then evaporate.
 The decompiled `isInstanceOf` is a one-liner returning `kClass.isInstance(this)`; the smart cast it enabled became an
 ordinary, checked-at-source assignment with no runtime cast inserted.
 
+**Explicit backing fields** collapse to exactly what you'd hand-write.
+The `val errors: List` / `field = mutableListOf()` pair becomes one private field and a read-only getter — no second property, and crucially no setter:
+
+```java
+private final List errors = new ArrayList();   // the single backing field
+public final List getErrors() { return this.errors; }   // read-only — no setErrors emitted
+```
+
+Inside the class, where `errors` means the `MutableList`, `errors += message` is just a method call on that same field:
+
+```java
+((Collection) this.errors).add(message);   // from `errors += message`
+```
+
+So the encapsulation is real, not a wrapper: callers see `List`, the class mutates the one underlying instance, and nothing is allocated to bridge the two.
+
+**`@JvmName`** is the most literal lowering of all — the three `positive()` overloads simply become three differently-named static methods, exactly as annotated:
+
+```java
+public static final void positiveInt(ValidationScope<Integer> $context)  { … }
+public static final void positiveLong(ValidationScope<Long> $context)    { … }
+public static final void positiveDouble(ValidationScope<Double> $context){ … }
+```
+
+The Kotlin-side name `positive` exists only in the `@Metadata`; the JVM only ever sees the disambiguated names.
+
+**`fun interface`** doesn't allocate a class per lambda.
+`Translator { key, args -> … }` lowers to an `invokedynamic` call site backed by `LambdaMetafactory` — the same machinery as a plain Kotlin/Java lambda, the runtime spins up the implementation on first use:
+
+```java
+// the `Translator { … }` becomes:
+0: invokedynamic #40,  0  // InvokeDynamic #0:translate:()Lsure/Translator;
+```
+
+**Definitely-non-null types** mostly vanish.
+`F & Any` erases to its ordinary bound — there's no special JVM type — so the guarantee is carried by `@Metadata` plus the occasional `Intrinsics.checkNotNullParameter` guard the compiler drops in at a public boundary. At runtime it's a plain non-null reference like any other.
+
 ### Metadata and reflection
 
 Kotlin reflection reads from a hidden `@Metadata` annotation — protobuf-encoded type info (nullability, property kinds,
