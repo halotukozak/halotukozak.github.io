@@ -265,12 +265,34 @@ val userValidator = Validator<User> {
 }
 ```
 
-Two things make this work.
-The compiler resolves a context parameter by picking the nearest matching value in scope — it's resolution, not
+It's tempting to read `context(ValidationScope<T>) T.() -> Unit` as "two receivers, two `this`es" — and if you remember
+the old *context receivers*, that's exactly what they were.
+Context **parameters** are not that.
+There is only one `this` in the block — the extension receiver, the `User` — and the `ValidationScope` is *not* a second
+`this`.
+You can't call its members directly: inside `Validator<User> { … }`, `raise("…")` won't resolve, and there's no
+`this@ValidationScope` label to reach for either.
+
+| Inside…                 | the single `this` is…         | the scope is…                                                          |
+|-------------------------|-------------------------------|------------------------------------------------------------------------|
+| `Validator<User> { … }` | the `User`                    | an ambient `context(ValidationScope<User>)` parameter — *not* a `this` |
+| `field(::name) { … }`   | the `ValidationScope<String>` | the receiver itself (`field`'s block is `ValidationScope<F>.(F)`)      |
+
+So `::name` resolves against the one `this`, the `User`.
+What does the scope do, then?
+It sits in the background as a context parameter, and the compiler uses it to *satisfy other functions that ask for
+one*.
+When `notBlank()` declares `context(_: ValidationScope<String>)`, the compiler looks around for a value of that type and
+wires it in — the ambient scope answers that call, without ever being a receiver you type against.
+That's the whole distinction from the old model: a context parameter is plumbing the compiler threads into the functions
+that request it, not an extra `this` whose members you can call.
+
+Two further things follow.
+The compiler resolves a context parameter by picking the *nearest* matching value in scope — it's resolution, not
 dispatch, and at the JVM level it lowers to an ordinary leading argument.
-And context parameters are orthogonal: unlike a single extension receiver, a function can require several at once —
-which is what lets a `field` block stay an extension on the scope (so `this` satisfies `notBlank()`'s requirement) while
-the value arrives as the lambda argument.
+And context parameters are orthogonal: a function can require several at once, regardless of how they got there —
+which is what lets a `field` block be a plain extension on the scope (so the leaf checks find their `ValidationScope`)
+while the value arrives as the lambda argument.
 
 ## Step 5: Nesting — the sealed scope family and the `value` contract
 
@@ -388,8 +410,18 @@ The `when` is exhaustive with no `else` because the base is `sealed`.
 The `contract` is the magic.
 `returnsNotNull() implies (this@value is ValidationScope<T & Any>)` is a promise to the compiler: *when this getter
 returns a non-null value, treat the receiver as a scope of the non-null type.*
-`T & Any` is a **definitely-non-null type** — the only way to name "the non-null version of an unbounded generic `T`."
-For nullable `T = X?` it's `X`; for non-nullable `T` it collapses to `T`.
+
+Here's why that's worth the ceremony, concretely.
+A user validates a nullable field — say `optional(::nickname) { … }` where `nickname: String?`.
+Inside that block I want to call `notBlank()`, which only exists on `ValidationScope<String>`, not
+`ValidationScope<String?>`.
+Without the contract I'd be stuck writing `value!!` or `value?.let { … }` at every check — exactly the null-noise this
+library is supposed to remove.
+The contract lets me skip a single null check at the top and have the compiler treat the value as a plain `String` for
+the rest of the block: no `!!`, no `?`, no cast.
+
+`T & Any` is the type that expresses "the non-null version of an unbounded generic `T`" — for nullable `T = X?` it's
+`X`, for non-nullable `T` it collapses to `T`.
 A contract can refine the type of a *receiver*, and an extension's receiver is exactly the scope — which is why this
 can't be a plain member.
 In Step 7 it lets one helper handle nullable and non-nullable fields with no cast.
@@ -724,7 +756,8 @@ Every `check` now returns a `Message` instead of a `String`; the rest of the str
 ## Step 14: @Validatable + KSP — generating `validate()`
 
 One pain is left: calling `someValidator.validate(req)` by hand and wiring up a registry.
-The shape I'm after is the one from the very top of this post — tag a class `@Validatable`, point it at its validator, and get a `validate()` extension for free:
+The shape I'm after is the one from the very top of this post — tag a class `@Validatable`, point it at its validator,
+and get a `validate()` extension for free:
 
 ```kotlin
 @Validatable
@@ -748,7 +781,8 @@ It marks the class and, optionally, names an external validator object instead o
 annotation class Validatable(val with: KClass<out Validator<*>> = Validator::class)
 ```
 
-Turning that `@Validatable` into a real `validate()` is a compile-time job, and [KSP](https://kotlinlang.org/docs/ksp-overview.html) — Kotlin Symbol Processing — is the tool for it.
+Turning that `@Validatable` into a real `validate()` is a compile-time job,
+and [KSP](https://kotlinlang.org/docs/ksp-overview.html) — Kotlin Symbol Processing — is the tool for it.
 It's the lightweight successor to `kapt`: instead of generating Java stubs and running a `javac` annotation processor,
 KSP hands you a resolved view of the program's *Kotlin* symbols (classes, functions, properties, annotations) and lets
 you emit new source files, which the compiler then picks up in the same build.
@@ -810,7 +844,10 @@ scans the class's declarations for a property called `validator`.
 If neither is present, the processor calls `logger.error(...)` with the offending class, which fails the build with a
 pointed message instead of emitting code that won't compile.
 
-`render` then produces, for each `@Validatable` type, a `validate()` extension, plus a `validatorsByClass` map and a
+There's no clever code generator behind `render` — it's a plain `buildString` that concatenates Kotlin source as text
+from the `(class, validator)` pairs it collected.
+No templating engine, no AST builder; it just prints the strings.
+For each `@Validatable` type it emits a `validate()` extension, plus a shared `validatorsByClass` map and a
 `reified validatorFor<T>()` lookup:
 
 ```kotlin
@@ -842,16 +879,19 @@ Decompiling the JVM target shows it flattening into ordinary bytecode patterns.
 A check like `notBlank()` has no receiver in Kotlin, but its `context(_: ValidationScope<String>)` lowers to a plain
 leading parameter:
 
+[//]: # (@formatter:off)
 ```java
 public static final void notBlank(ValidationScope $context) {
     check($context, NotBlankPredicate.INSTANCE, NotBlankMessage.INSTANCE);
 }
 ```
+[//]: # (@formatter:on)
 
 **`field(::name)`** inlines into the caller.
 The property reference becomes a fresh synthetic class with a `get()`; there is no reflective dispatch, just a
 specialized getter call:
 
+[//]: # (@formatter:off)
 ```java
 KProperty0 property$iv = (KProperty0) new PropertyReference0Impl($receiver) {
     public Object get() {
@@ -862,6 +902,7 @@ Object value$iv = property$iv.get();
 FieldScope fs = new FieldScope(value$iv, property$iv.getName(), scope$iv, shortCircuit$iv);
 // … inlined block body …
 ```
+[//]: # (@formatter:on)
 
 **`reified T`** in `Validator<User> { … }` lowers to a literal `User.class` at the call site —
 `Reflection.getOrCreateKotlinClass(User.class)` — captured into the `Validator` constructor.
@@ -879,41 +920,55 @@ The decompiled `isInstanceOf` is a one-liner returning `kClass.isInstance(this)`
 ordinary, checked-at-source assignment with no runtime cast inserted.
 
 **Explicit backing fields** collapse to exactly what you'd hand-write.
-The `val errors: List` / `field = mutableListOf()` pair becomes one private field and a read-only getter — no second property, and crucially no setter:
+The `val errors: List` / `field = mutableListOf()` pair becomes one private field and a read-only getter — no second
+property, and crucially no setter:
 
+[//]: # (@formatter:off)
 ```java
-private final List errors = new ArrayList();   // the single backing field
-public final List getErrors() { return this.errors; }   // read-only — no setErrors emitted
+private final List errors = new ArrayList();        // the single backing field
+public final List getErrors() { return this.errors; }  // read-only — no setErrors emitted
 ```
+[//]: # (@formatter:on)
 
 Inside the class, where `errors` means the `MutableList`, `errors += message` is just a method call on that same field:
 
+[//]: # (@formatter:off)
 ```java
 ((Collection) this.errors).add(message);   // from `errors += message`
 ```
+[//]: # (@formatter:on)
 
-So the encapsulation is real, not a wrapper: callers see `List`, the class mutates the one underlying instance, and nothing is allocated to bridge the two.
+So the encapsulation is real, not a wrapper: callers see `List`, the class mutates the one underlying instance, and
+nothing is allocated to bridge the two.
 
-**`@JvmName`** is the most literal lowering of all — the three `positive()` overloads simply become three differently-named static methods, exactly as annotated:
+**`@JvmName`** is the most literal lowering of all — the three `positive()` overloads simply become three
+differently-named static methods, exactly as annotated:
 
+[//]: # (@formatter:off)
 ```java
-public static final void positiveInt(ValidationScope<Integer> $context)  { … }
-public static final void positiveLong(ValidationScope<Long> $context)    { … }
-public static final void positiveDouble(ValidationScope<Double> $context){ … }
+public static final void positiveInt(ValidationScope<Integer> $context)   { … }
+public static final void positiveLong(ValidationScope<Long> $context)     { … }
+public static final void positiveDouble(ValidationScope<Double> $context) { … }
 ```
+[//]: # (@formatter:on)
 
 The Kotlin-side name `positive` exists only in the `@Metadata`; the JVM only ever sees the disambiguated names.
 
 **`fun interface`** doesn't allocate a class per lambda.
-`Translator { key, args -> … }` lowers to an `invokedynamic` call site backed by `LambdaMetafactory` — the same machinery as a plain Kotlin/Java lambda, the runtime spins up the implementation on first use:
+`Translator { key, args -> … }` lowers to an `invokedynamic` call site backed by `LambdaMetafactory` — the same
+machinery as a plain Kotlin/Java lambda, the runtime spins up the implementation on first use:
 
+[//]: # (@formatter:off)
 ```java
 // the `Translator { … }` becomes:
-0: invokedynamic #40,  0  // InvokeDynamic #0:translate:()Lsure/Translator;
+0: invokedynamic #40,  0   // InvokeDynamic #0:translate:()Lsure/Translator;
 ```
+[//]: # (@formatter:on)
 
 **Definitely-non-null types** mostly vanish.
-`F & Any` erases to its ordinary bound — there's no special JVM type — so the guarantee is carried by `@Metadata` plus the occasional `Intrinsics.checkNotNullParameter` guard the compiler drops in at a public boundary. At runtime it's a plain non-null reference like any other.
+`F & Any` erases to its ordinary bound — there's no special JVM type — so the guarantee is carried by `@Metadata` plus
+the occasional `Intrinsics.checkNotNullParameter` guard the compiler drops in at a public boundary. At runtime it's a
+plain non-null reference like any other.
 
 ### Metadata and reflection
 
