@@ -1,7 +1,7 @@
 ---
 title: 'Magical Kotlin: Building a Type-Safe Validation DSL'
 description: 'A walking tour of context parameters, KProperty0, definitely-non-null types, contracts, sealed scopes, explicit backing fields, fun interface, inline+reified, expect/actual, @JvmName and KSP — by building a multiplatform validation DSL from scratch.'
-published: 2026-06-10
+published: 2026-06-12
 draft: false
 tags: [ 'Kotlin', 'DSL', 'type class', 'compile-time', 'metaprogramming', 'type-safety', 'bytecode' ]
 toc: true
