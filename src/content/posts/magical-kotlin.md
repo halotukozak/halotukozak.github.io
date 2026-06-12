@@ -1,6 +1,6 @@
 ---
 title: 'Magical Kotlin: Building a Type-Safe Validation DSL'
-description: 'A walking tour of context parameters, KProperty0, definitely-non-null types, contracts, sealed scopes, explicit backing fields, fun interface, inline+reified, expect/actual, @JvmName and KSP — by building a multiplatform validation DSL from scratch.'
+description: 'A walking tour of context parameters, KProperty0, definitely-non-null types, contracts, sealed scopes, explicit backing fields, fun interface, inline+reified and KSP — by building a multiplatform validation DSL from scratch.'
 published: 2026-06-12
 draft: false
 tags: [ 'Kotlin', 'DSL', 'type class', 'compile-time', 'metaprogramming', 'type-safety', 'bytecode' ]
@@ -301,16 +301,10 @@ split it into a small two-tier family.
 The base declares the contract; one intermediate owns the error list, the other forwards errors to its parent; and a
 leaf per nesting kind only has to say how it builds its `path`.
 
-The base also gains a `shortCircuit` flag here; ignore it
-until [Step 9](#step-9-fail-fast--short-circuiting-across-platforms), where it earns its keep.
-
 ```kotlin
 @ValidationDsl
 sealed class ValidationScope<out T> {
     internal abstract val path: String
-
-    @PublishedApi
-    internal abstract val shortCircuit: Boolean
     internal abstract fun addError(error: ValidationError)
 
     fun raise(message: String) = addError(ValidationError(path, message))
@@ -331,7 +325,7 @@ sealed class ChildrenScope<out T> : ValidationScope<T>() {
     final override fun addError(error: ValidationError) = parent.addError(error)
 }
 
-internal class RootScope<out T>(val value: T, override val shortCircuit: Boolean) : ParentScope<T>() {
+internal class RootScope<out T>(val value: T) : ParentScope<T>() {
     override val path = ""
 }
 
@@ -339,7 +333,6 @@ internal class FieldScope<out T>(
     val value: T,
     name: String,
     override val parent: ValidationScope<*>,
-    override val shortCircuit: Boolean = parent.shortCircuit,
 ) : ChildrenScope<T>() {
     override val path = if (parent.path.isEmpty()) name else "${parent.path}.$name"
 }
@@ -348,7 +341,6 @@ internal class ItemScope<out T>(
     val value: T,
     index: Int,
     override val parent: ValidationScope<*>,
-    override val shortCircuit: Boolean = parent.shortCircuit,
 ) : ChildrenScope<T>() {
     override val path = "${parent.path}[$index]"
 }
@@ -357,7 +349,6 @@ internal class EntryScope<out T>(
     val value: T,
     key: Any?,
     override val parent: ValidationScope<*>,
-    override val shortCircuit: Boolean = parent.shortCircuit,
 ) : ChildrenScope<T>() {
     override val path = "${parent.path}[$key]"
 }
@@ -371,7 +362,7 @@ A leaf then declares only its `path` and holds its `value`; `raise` lives once, 
 Both intermediates and the base are `sealed`, which matters for the accessor next.
 
 Errors are now a small type instead of a bare string, so the path rides along (this becomes a sealed type with `Field`/
-`Element`/`Root` cases in [Step 13](#step-13-structured-translatable-messages--fun-interface)):
+`Element`/`Root` cases in [Step 11](#step-11-structured-translatable-messages--fun-interface)):
 
 ```kotlin
 data class ValidationError(val path: String, val message: String)
@@ -468,28 +459,26 @@ You only ever see the innermost scope by default — which is what you wanted.
 So far `field` assumed a non-null property.
 Real DTOs have nullable fields, with two sensible behaviors: *skip if null* (`optional`), or *fail if null* (a required
 field that happens to be nullable).
-The definitely-non-null type from Step 5 carries the whole signature, and `runScope` (Step 9) wraps each descent:
+The definitely-non-null type from Step 5 carries the whole signature:
 
 ```kotlin
 context(scope: ValidationScope<*>)
 inline fun <F : Any> field(
     property: KProperty0<F>,
-    shortCircuit: Boolean = scope.shortCircuit,
     block: ValidationScope<F>.(F) -> Unit = {},
 ) {
     val value = property.get()
-    runScope { FieldScope(value, property.name, scope, shortCircuit).block(value) }
+    FieldScope(value, property.name, scope).block(value)
 }
 
 context(scope: ValidationScope<*>)
 inline fun <F : Any> optional(
     property: KProperty0<F?>,
-    shortCircuit: Boolean = scope.shortCircuit,
     block: ValidationScope<F>.(F) -> Unit,
 ) {
     val value = property.get()
     if (value != null) {
-        runScope { FieldScope(value, property.name, scope, shortCircuit).block(value) }
+        FieldScope(value, property.name, scope).block(value)
     }
 }
 ```
@@ -511,7 +500,6 @@ inherited.
 internal class EphemeralScope<out T>(
     val value: T,
     parent: ValidationScope<*>,
-    override val shortCircuit: Boolean = parent.shortCircuit,
 ) : ParentScope<T>() {
     override val path = parent.path
 }
@@ -520,7 +508,7 @@ context(scope: ValidationScope<T>)
 fun <T> anyOf(vararg rules: ValidationScope<T>.() -> Unit, message: () -> String) {
     val anyValid = rules.any { rule ->
         val isolated = EphemeralScope(scope.value, scope)
-        runScope { isolated.rule() }
+        isolated.rule()
         isolated.errors.isEmpty()
     }
     if (!anyValid) scope.raise(message())
@@ -529,79 +517,21 @@ fun <T> anyOf(vararg rules: ValidationScope<T>.() -> Unit, message: () -> String
 context(scope: ValidationScope<T>)
 fun <T> not(rule: ValidationScope<T>.() -> Unit, message: () -> String) {
     val isolated = EphemeralScope(scope.value, scope)
-    runScope { isolated.rule() }
+    isolated.rule()
     if (isolated.errors.isEmpty()) scope.raise(message())   // rule passed → negation fails
 }
 ```
 
 `EphemeralScope` keeps its own list instead of delegating up, so the parent never sees the trial-run errors.
 
-## Step 9: Fail-fast — short-circuiting across platforms
-
-Until now every rule runs and all errors accumulate.
-Sometimes you want the opposite: stop at the first failure.
-Fail-fast has to unwind out of arbitrarily nested blocks back to the nearest boundary, and the cleanest unwinding
-mechanism is an exception — one that's cheap and never looks like a real error.
-Kotlin's `CancellationException` is exactly that. It lives in the coroutines world, but it's an ordinary
-`RuntimeException` with no coroutine machinery attached — nothing here suspends. Borrowing it just means any stray
-`catch (e: Exception)` that wraps a validator is conventionally expected to rethrow it rather than swallow it, so the
-control-flow throw is less likely to be eaten by accident.
-
-The public `raise(message)` from Step 5 now routes through a protected `raise(error)` that throws when `shortCircuit` is
-on — which is why the base carried that flag since Step 5:
-
-```kotlin
-// on ValidationScope
-fun raise(message: String) = raise(ValidationError(path, message))
-
-protected fun raise(error: ValidationError) {
-    addError(error)
-    if (shortCircuit) throw ScopeShortCircuit()
-}
-```
-
-`runScope` is the boundary that swallows the throw — so siblings keep running when accumulating, and unwinding stops
-here when failing fast:
-
-```kotlin
-@PublishedApi
-internal inline fun runScope(block: () -> Unit) = try {
-    block()
-} catch (_: ScopeShortCircuit) {
-    // expected: short-circuit unwinds to here
-}
-```
-
-Because `sure` is Multiplatform, `ScopeShortCircuit` is declared `expect` and each target supplies an `actual`.
-The JVM one skips the most expensive part of throwing — filling in the stack trace — since this exception is pure
-control flow:
-
-```kotlin
-// commonMain
-@PublishedApi
-internal expect class ScopeShortCircuit() : CancellationException
-
-// jvmMain
-internal actual class ScopeShortCircuit actual constructor() :
-    CancellationException("validation short-circuit") {
-    override fun fillInStackTrace(): Throwable = this   // never logged or inspected
-}
-
-// iosMain
-internal actual class ScopeShortCircuit actual constructor() :
-    CancellationException("validation short-circuit")
-```
-
-The strategy is toggled per validator with `failFast()` / `accumulating()`, which rebuild it with a different flag.
-
 The rule language is done: nesting with correct paths, `@DslMarker` safety, `optional`/`field` for
-nullables, `anyOf`/`not`, and fail-fast. Every pain from the hand-rolled Step 1 function is now gone.
+nullables, and `anyOf`/`not`. Every pain from the hand-rolled Step 1 function is now gone.
 
-The remaining steps change register. Steps 1–9 fixed *pains*; from here on the rules are settled and the work is
+The remaining steps change register. Steps 1–8 fixed *pains*; from here on the rules are settled and the work is
 dressing them in a public API — make `Validator` findable by type, translate messages, and finally generate
 `validate()`. Same library, outer layer.
 
-## Step 10: The Validator class — inline, reified, noinline
+## Step 9: The Validator class — inline, reified, noinline
 
 `Validator` has been a thin wrapper.
 I want three things from it: construct it as `Validator<User> { … }`, look it up later by type, and validate an
@@ -612,14 +542,12 @@ the constructing function `inline`:
 ```kotlin
 open class Validator<T>(
     protected val kClass: KClass<T & Any>,
-    internal val shortCircuit: Boolean,
     internal val applyRules: ValidationScope<T>.() -> Unit,
 ) {
     companion object {
         inline operator fun <reified T : Any> invoke(
-            shortCircuit: Boolean = true,
             noinline rules: context(ValidationScope<T>) T.() -> Unit,
-        ): Validator<T> = Validator(T::class, shortCircuit) { rules(value) }
+        ): Validator<T> = Validator(T::class) { rules(value) }
     }
 }
 ```
@@ -642,11 +570,11 @@ Three smaller choices in the signature are worth a line each:
   which needs `reified`, which needs `inline` — and a constructor can be none of those. So the real entry point has to
   be an inline reified factory function. Naming it `invoke` on the companion keeps the constructor-like call site:
   `Validator<User> { … }` resolves to `Validator.Companion.invoke<User>(…)`, so nothing at the call site has to change.
-- **`open`** class with an **`open fun validate`**. `@Validatable(with = …)` (Step 14) lets a caller register a custom
+- **`open`** class with an **`open fun validate`**. `@Validatable(with = …)` (Step 12) lets a caller register a custom
   `Validator` subclass in place of the default, and that's only possible if the class can be extended and `validate`
   overridden — a `final` class would slam the door.
 
-## Step 11: Validating an Any — the isInstanceOf contract
+## Step 10: Validating an Any — the isInstanceOf contract
 
 The point of the registry is to validate a value you only know as `Any?`.
 After a runtime type check I want to use it as `T` without an unchecked cast — and a contract buys that:
@@ -659,12 +587,12 @@ private fun <T : Any> Any.isInstanceOf(kClass: KClass<T>): Boolean {
 }
 
 open fun validate(value: Any?): ValidationResult = when {
-    value == null -> ValidationResult.Invalid(ValidationError.Root(Message.NotNull))
+    value == null -> ValidationResult.Invalid(listOf(ValidationError("", "must not be null")))
     !value.isInstanceOf(kClass) ->
-        ValidationResult.Invalid(ValidationError.Root(Message.TypeMismatched(kClass, value::class)))
+        ValidationResult.Invalid(listOf(ValidationError("", "expected ${kClass.simpleName}")))
     else -> {
-        val scope = RootScope(value, shortCircuit)   // value smart-cast to T here
-        runScope { applyRules(scope) }
+        val scope = RootScope(value)   // value smart-cast to T here
+        applyRules(scope)
         if (scope.errors.isEmpty()) ValidationResult.Valid else ValidationResult.Invalid(scope.errors)
     }
 }
@@ -678,39 +606,7 @@ assertion is "trusted" it has already been verified at runtime. The contract jus
 `ValidationResult` is just `Valid` or `Invalid(errors)` — a sealed result type that replaces the raw `List` once there's
 a type mismatch to report.
 
-## Step 12: @JvmName — overloads the JVM can't tell apart
-
-I want `positive()` for `Int`, `Long`, and `Double`.
-In Kotlin these are three distinct context functions:
-
-```kotlin
-context(_: ValidationScope<Int>)
-fun positive() = check({ it <= 0 }) { Message.Positive }
-
-context(_: ValidationScope<Long>)
-fun positive() = check({ it <= 0L }) { Message.Positive }
-
-context(_: ValidationScope<Double>)
-fun positive() = check({ it <= 0.0 }) { Message.Positive }
-```
-
-But the context parameter erases to a plain argument, so all three collapse to the same JVM signature —
-`positive(ValidationScope)` — and the bytecode won't link.
-The fix is a distinct JVM name behind one Kotlin name:
-
-```kotlin
-@JvmName("positiveInt")
-context(_: ValidationScope<Int>)
-fun positive() = check({ it <= 0 }) { Message.Positive }
-
-@JvmName("positiveLong")
-context(_: ValidationScope<Long>)
-fun positive() = check({ it <= 0L }) { Message.Positive }
-```
-
-Kotlin callers still write `positive()`; the compiler picks by context type and emits the right `@JvmName`.
-
-## Step 13: Structured, translatable messages — fun interface
+## Step 11: Structured, translatable messages — fun interface
 
 The messages have been bare strings this whole time.
 Errors shouldn't hard-code English, so I replace the string with a `Message` carrying a stable `key`, pre-stringified
@@ -774,7 +670,7 @@ override fun raise(message: Message) = raise(ValidationError.Element(parent.path
 
 Every `check` now returns a `Message` instead of a `String`; the rest of the structure is untouched.
 
-## Step 14: @Validatable + KSP — generating validate()
+## Step 12: @Validatable + KSP — generating validate()
 
 One pain is left: calling `someValidator.validate(req)` by hand and wiring up a registry.
 The shape I'm after is the one from the very top of this post — tag a class `@Validatable`, point it at its validator,
@@ -921,7 +817,7 @@ KProperty0 property$iv = (KProperty0) new PropertyReference0Impl($receiver) {
     }
 };
 Object value$iv = property$iv.get();
-FieldScope fs = new FieldScope(value$iv, property$iv.getName(), scope$iv, shortCircuit$iv);
+FieldScope fs = new FieldScope(value$iv, property$iv.getName(), scope$iv);
 // … inlined block body …
 ```
 [//]: # (@formatter:on)
@@ -930,10 +826,6 @@ FieldScope fs = new FieldScope(value$iv, property$iv.getName(), scope$iv, shortC
 `Reflection.getOrCreateKotlinClass(User.class)` — captured into the `Validator` constructor.
 The `noinline rules` lambda forced a real `Function` object, so it shows up as a synthetic class rather than copied-in
 code; that's the whole point of `noinline`.
-
-**The short-circuit** is just exception control flow.
-`runScope` is a `try/catch (ScopeShortCircuit)`, and on the JVM the override `fillInStackTrace() { return this; }` means
-throwing it costs nothing beyond the allocation — no stack walk.
 
 **Contracts** leave *no trace at all* in bytecode.
 `returns(true) implies (this is T)` and `returnsNotNull() implies …` are compile-time-only — they change what the Kotlin
@@ -962,19 +854,6 @@ Inside the class, where `errors` means the `MutableList`, `errors += message` is
 
 So the encapsulation is real, not a wrapper: callers see `List`, the class mutates the one underlying instance, and
 nothing is allocated to bridge the two.
-
-**`@JvmName`** is the most literal lowering of all — the three `positive()` overloads simply become three
-differently-named static methods, exactly as annotated:
-
-[//]: # (@formatter:off)
-```java
-public static final void positiveInt(ValidationScope<Integer> $context)   { … }
-public static final void positiveLong(ValidationScope<Long> $context)     { … }
-public static final void positiveDouble(ValidationScope<Double> $context) { … }
-```
-[//]: # (@formatter:on)
-
-The Kotlin-side name `positive` exists only in the `@Metadata`; the JVM only ever sees the disambiguated names.
 
 **`fun interface`** doesn't allocate a class per lambda.
 `Translator { key, args -> … }` lowers to an `invokedynamic` call site backed by `LambdaMetafactory` — the same
