@@ -32,9 +32,9 @@ data class LoginRequest(val username: String, val password: String) {
 LoginRequest("alice", "hunter22!").validate() // ValidationResult.Valid
 ```
 
-No reflection on user types.
-No string field names.
-Errors accumulate, scopes nest, every cast is statically checked, and `validate()` is generated for you at compile time.
+No reflection on user types, no string field names — and that `validate()` isn't hand-written.
+A KSP processor generates it at compile time (Step 14); everything between here and there is how the pieces it relies on
+get built.
 
 ### A Note on Valiktor
 
@@ -50,8 +50,6 @@ Everything below uses Kotlin **2.4.0**.
 Context parameters are stable there — no compiler flag, no opt-in.
 If you're on an older version you'll need `-Xcontext-parameters`, and on much older ones you might know them as
 `context receivers` — different syntax, same mental model.
-One other trick below — explicit backing fields, for giving a property a public read-only type over a private mutable
-one.
 
 I'll build the library one feature at a time, and every step is provoked by a concrete pain in the step before it —
 nothing appears until something forces it to.
@@ -108,9 +106,11 @@ class ValidationScope<T>(val value: T) {
 }
 ```
 
-`errors` uses an **explicit backing field**.
-The property's public type is `List<String>`, but inside the class the name `errors` resolves to the `MutableList`
-behind it — so callers get a read-only view while `raise` still appends, with no `_errors`-plus-getter dance.
+That `field = mutableListOf()` under the property is not a typo — it's an **explicit backing field**, stable as of
+Kotlin 2.4 (experimental behind `-Xexplicit-backing-fields` in 2.3). It lets a `val` declare two types: a public one and
+the one the field actually holds.
+Here the public type is `List<String>`, but inside the class the name `errors` resolves to the `MutableList` behind it —
+so callers get a read-only view while `raise` still appends, with no `_errors`-plus-getter dance.
 
 To run rules against a scope, I take a lambda with the scope as its receiver — that lambda *is* the validator:
 
@@ -241,12 +241,13 @@ fun <F> field(property: KProperty0<F>, block: ValidationScope<F>.(F) -> Unit) {
 }
 ```
 
-The checks move from receiver to context too, sharing one `check` helper:
+The checks move from receiver to context too, sharing one `check` helper. Note the predicate flags the *failure*: when
+it returns `true`, the value is bad and `check` raises — so each leaf describes what's wrong, not what's allowed.
 
 ```kotlin
 context(scope: ValidationScope<T>)
 fun <T> check(predicate: (T) -> Boolean, onError: (T) -> String) {
-    if (predicate(scope.value)) scope.raise(onError(scope.value))
+    if (predicate(scope.value)) scope.raise(onError(scope.value))   // predicate true → raise
 }
 
 context(_: ValidationScope<String>)
@@ -265,34 +266,21 @@ val userValidator = Validator<User> {
 }
 ```
 
-It's tempting to read `context(ValidationScope<T>) T.() -> Unit` as "two receivers, two `this`es" — and if you remember
-the old *context receivers*, that's exactly what they were.
-Context **parameters** are not that.
-There is only one `this` in the block — the extension receiver, the `User` — and the `ValidationScope` is *not* a second
-`this`.
-You can't call its members directly: inside `Validator<User> { … }`, `raise("…")` won't resolve, and there's no
-`this@ValidationScope` label to reach for either.
+The one trap worth calling out: a context parameter is *not* a second `this`. If you remember the old *context
+receivers*, those did add a second receiver — context **parameters** don't. Inside `Validator<User> { … }` there's a
+single `this` (the `User`), so `::name` resolves against it, while the scope just rides along:
 
 | Inside…                 | the single `this` is…         | the scope is…                                                          |
 |-------------------------|-------------------------------|------------------------------------------------------------------------|
 | `Validator<User> { … }` | the `User`                    | an ambient `context(ValidationScope<User>)` parameter — *not* a `this` |
 | `field(::name) { … }`   | the `ValidationScope<String>` | the receiver itself (`field`'s block is `ValidationScope<F>.(F)`)      |
 
-So `::name` resolves against the one `this`, the `User`.
-What does the scope do, then?
-It sits in the background as a context parameter, and the compiler uses it to *satisfy other functions that ask for
-one*.
-When `notBlank()` declares `context(_: ValidationScope<String>)`, the compiler looks around for a value of that type and
-wires it in — the ambient scope answers that call, without ever being a receiver you type against.
-That's the whole distinction from the old model: a context parameter is plumbing the compiler threads into the functions
-that request it, not an extra `this` whose members you can call.
-
-Two further things follow.
-The compiler resolves a context parameter by picking the *nearest* matching value in scope — it's resolution, not
-dispatch, and at the JVM level it lowers to an ordinary leading argument.
-And context parameters are orthogonal: a function can require several at once, regardless of how they got there —
-which is what lets a `field` block be a plain extension on the scope (so the leaf checks find their `ValidationScope`)
-while the value arrives as the lambda argument.
+You can't call the scope's members directly — `raise("…")` won't resolve in the outer block, and there's no
+`this@ValidationScope` label. Its only job is to *satisfy other functions that ask for one*: when `notBlank()` declares
+`context(_: ValidationScope<String>)`, the compiler finds the nearest matching value and wires it in. It's resolution,
+not dispatch, and at the JVM level it lowers to an ordinary leading argument. A function can also ask for several
+context parameters at once — which is what lets a `field` block stay a plain extension on the scope while the value
+arrives as the lambda argument.
 
 ## Step 5: Nesting — the sealed scope family and the `value` contract
 
@@ -377,13 +365,24 @@ Errors are now a small type instead of a bare string, so the path rides along (t
 data class ValidationError(val path: String, val message: String)
 ```
 
-But splitting the class created a problem: `value` used to live on the one `ValidationScope`, and now it's scattered
-across the subclasses — and `check` does `scope.value`.
+### The `value` contract
 
-I want `value` back as a single accessor over the whole family, and the family is a *closed* set, so a `when` over it
-needs no `else`.
-That's `sealed`.
-I keep the accessor as an *extension property* rather than a base member, for a reason that's about to pay off:
+Start with the payoff, because the syntax below only makes sense once you know what it buys.
+Picture a user validating a nullable field — `optional(::nickname) { … }` where `nickname: String?`. Inside that block
+I want to call `notBlank()`, but `notBlank()` only exists on `ValidationScope<String>`, not `ValidationScope<String?>`.
+Without help I'd be writing `value!!` or `value?.let { … }` at every single check — exactly the null-noise this library
+exists to delete. What I want instead: one null check at the top of the block, and the compiler treats the value as a
+plain `String` for the rest — no `!!`, no `?`, no cast.
+
+A **contract** delivers that. It's a promise the getter makes to the compiler, stated in the `contract { }` block:
+*when this getter returns a non-null value, treat the receiver as a scope of the non-null type* — written
+`returnsNotNull() implies (this@value is ValidationScope<T & Any>)`. That `T & Any` is a **definitely-non-null type**:
+"the non-null version of an unbounded generic `T`" — for nullable `T = X?` it's `X`, for already-non-null `T` it
+collapses to `T`.
+
+A contract can refine the type of the *receiver*, and the receiver here is the scope — which is the one reason this is
+an *extension property*, not a base member. The body is a plain exhaustive `when`, no `else`, because the base is
+`sealed`:
 
 [//]: # (@formatter:off)
 ```kotlin
@@ -405,26 +404,7 @@ val <T> ValidationScope<T>.value: T
 ```
 [//]: # (@formatter:on)
 
-The `when` is exhaustive with no `else` because the base is `sealed`.
-
-The `contract` is the magic.
-`returnsNotNull() implies (this@value is ValidationScope<T & Any>)` is a promise to the compiler: *when this getter
-returns a non-null value, treat the receiver as a scope of the non-null type.*
-
-Here's why that's worth the ceremony, concretely.
-A user validates a nullable field — say `optional(::nickname) { … }` where `nickname: String?`.
-Inside that block I want to call `notBlank()`, which only exists on `ValidationScope<String>`, not
-`ValidationScope<String?>`.
-Without the contract I'd be stuck writing `value!!` or `value?.let { … }` at every check — exactly the null-noise this
-library is supposed to remove.
-The contract lets me skip a single null check at the top and have the compiler treat the value as a plain `String` for
-the rest of the block: no `!!`, no `?`, no cast.
-
-`T & Any` is the type that expresses "the non-null version of an unbounded generic `T`" — for nullable `T = X?` it's
-`X`, for non-nullable `T` it collapses to `T`.
-A contract can refine the type of a *receiver*, and an extension's receiver is exactly the scope — which is why this
-can't be a plain member.
-In Step 7 it lets one helper handle nullable and non-nullable fields with no cast.
+In Step 7 this same contract lets one helper handle nullable and non-nullable fields with no cast.
 
 The collection combinators each spin up the matching scope, so a deep failure still reports the right path:
 
@@ -546,7 +526,10 @@ Until now every rule runs and all errors accumulate.
 Sometimes you want the opposite: stop at the first failure.
 Fail-fast has to unwind out of arbitrarily nested blocks back to the nearest boundary, and the cleanest unwinding
 mechanism is an exception — one that's cheap and never looks like a real error.
-Kotlin's coroutine `CancellationException` is exactly that.
+Kotlin's `CancellationException` is exactly that. It lives in the coroutines world, but it's an ordinary
+`RuntimeException` with no coroutine machinery attached — nothing here suspends. Borrowing it just means any stray
+`catch (e: Exception)` that wraps a validator is conventionally expected to rethrow it rather than swallow it, so the
+control-flow throw is less likely to be eaten by accident.
 
 The public `raise(message)` from Step 5 now routes through a protected `raise(error)` that throws when `shortCircuit` is
 on — which is why the base carried that flag since Step 5:
@@ -612,7 +595,7 @@ open class Validator<T>(
     companion object {
         inline operator fun <reified T : Any> invoke(
             shortCircuit: Boolean = true,
-            noinline rules: context(ValidationScope<T>)(T).() -> Unit,
+            noinline rules: context(ValidationScope<T>) T.() -> Unit,
         ): Validator<T> = Validator(T::class, shortCircuit) { rules(value) }
     }
 }
@@ -624,8 +607,8 @@ Three deliberate keywords:
   `inline`.
 - **`noinline rules`** is the counterweight: the lambda is *stored* in the `Validator`, so it must exist as a real
   object in bytecode, and inlined lambdas don't — their bodies are copied into the call site with nothing left to store.
-- The rules type `context(ValidationScope<T>)(T).() -> Unit` is the two-receiver shape from Step 4, now at the top
-  level — `this` is the value, the scope is in context.
+- The rules type `context(ValidationScope<T>) T.() -> Unit` is the same context-plus-receiver shape from Step 4, now at
+  the top level — `this` is the value, the scope is in context.
 
 ## Step 11: Validating an `Any` — the isInstanceOf contract
 
@@ -651,9 +634,11 @@ open fun validate(value: Any?): ValidationResult = when {
 }
 ```
 
-`returns(true) implies (this is T)` is an *unverified* assertion — the compiler takes it on faith and smart-casts
-`value` to `T` in the `else` branch, no `as T`, no warning.
-`KClass.isInstance` does the real runtime check, so the assertion holds.
+`returns(true) implies (this is T)` reads alarming — it's an *unverified* assertion, meaning the compiler can't prove it
+and takes the claim on faith, then smart-casts `value` to `T` with no `as T` and no warning. What makes it safe rather
+than reckless is the function body: `KClass.isInstance` performs the real runtime type check, so by the time the
+assertion is "trusted" it has already been verified at runtime. The contract just teaches the compiler what that
+`Boolean` result *means*.
 `ValidationResult` is just `Valid` or `Invalid(errors)` — a sealed result type that replaces the raw `List` once there's
 a type mismatch to report.
 
@@ -872,8 +857,9 @@ That closes the loop: the public API from the very top of this post is now fully
 
 ## Through the Decompiler
 
-Most of the "magic" above exists only in source.
-Decompiling the JVM target shows it flattening into ordinary bytecode patterns.
+The library is done — the section below is a bonus for the curious. Most of the "magic" above exists only in source;
+decompiling the JVM target shows it flattening into ordinary bytecode patterns. If you don't care what it lowers to,
+jump to [Case Closed](#case-closed).
 
 **Context parameters** are the clearest case.
 A check like `notBlank()` has no receiver in Kotlin, but its `context(_: ValidationScope<String>)` lowers to a plain
