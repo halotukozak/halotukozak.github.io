@@ -20,16 +20,27 @@ It is Kotlin Multiplatform, and the public API reads like this:
 
 ```kotlin
 @Validatable
-data class LoginRequest(val username: String, val password: String) {
+data class Address(val city: String, val zip: String) {
     companion object {
-        val validator = Validator<LoginRequest> {
-            field(::username) { notBlank(); lengthIn(1..254) }
-            field(::password) { notBlank(); lengthIn(8..1024) }
+        val validator = Validator<Address> {
+            field(::city) { notBlank() }
+            field(::zip) { lengthIn(5..5) }
         }
     }
 }
 
-LoginRequest("alice", "hunter22!").validate() // ValidationResult.Valid
+@Validatable
+data class User(val name: String, val age: Int, val address: Address) {
+    companion object {
+        val validator = Validator<User> {
+            field(::name) { notBlank(); lengthIn(1..50) }
+            field(::age) { inRange(0..150) }
+            validated(::address)   // reuses Address's own validator, resolved by type
+        }
+    }
+}
+
+User("alice", 30, Address("Kraków", "30001")).validate() // ValidationResult.Valid
 ```
 
 No reflection on user types, no string field names — and that `validate()` isn't hand-written.
@@ -678,16 +689,27 @@ and get a `validate()` extension for free:
 
 ```kotlin
 @Validatable
-data class LoginRequest(val username: String, val password: String) {
+data class Address(val city: String, val zip: String) {
     companion object {
-        val validator = Validator<LoginRequest> {
-            field(::username) { notBlank(); lengthIn(1..254) }
-            field(::password) { notBlank(); lengthIn(8..1024) }
+        val validator = Validator<Address> {
+            field(::city) { notBlank() }
+            field(::zip) { lengthIn(5..5) }
         }
     }
 }
 
-LoginRequest("alice", "hunter22!").validate()   // ValidationResult — nothing hand-wired
+@Validatable
+data class User(val name: String, val age: Int, val address: Address) {
+    companion object {
+        val validator = Validator<User> {
+            field(::name) { notBlank(); lengthIn(1..50) }
+            field(::age) { inRange(0..150) }
+            validated(::address)   // Address's validator, looked up by type
+        }
+    }
+}
+
+User("alice", 30, Address("Kraków", "30001")).validate()   // ValidationResult — nothing hand-wired
 ```
 
 The annotation itself is tiny.
@@ -735,6 +757,7 @@ constants:
 ```kotlin
 private const val ANNOTATION_FQN = "sure.Validatable"
 private const val VALIDATOR_FQN = "sure.Validator"
+private const val VALIDATION_SCOPE_FQN = "sure.ValidationScope"
 private const val VALIDATION_RESULT_FQN = "sure.ValidationResult"
 private const val GENERATED_PACKAGE = "sure"
 private const val GENERATED_FILE = "GeneratedValidationExtensions"
@@ -845,8 +868,8 @@ skipped with a warning, but a `@Validatable` whose validator can't be resolved i
 
 There's no clever code generator behind `render`. It's a `buildString` that prints Kotlin source as text from the
 `(receiver, validator)` pairs — no templating engine, no AST builder, just `appendLine`. For each `@Validatable` type it
-emits a `validate()` extension, then one shared `validatorsByClass` map and a `reified validatorFor<T>()` lookup over
-it:
+emits a `validate()` extension, then one shared `validatorsByClass` map, a `reified validatorFor<T>()` lookup over it,
+and a `validated(::field)` overload that uses that lookup to resolve a nested validator by type:
 
 ```kotlin
     private fun render(refs: List<ValidatorRef>): String = buildString {
@@ -870,6 +893,11 @@ it:
     appendLine("inline fun <reified T : Any> validatorFor(): $VALIDATOR_FQN<T> =")
     appendLine("    validatorsByClass[T::class] as? $VALIDATOR_FQN<T>")
     appendLine("        ?: error(\"No validator registered for \${T::class.qualifiedName}\")")
+    appendLine()
+    // a validated(::field) overload that finds the sub-validator in the registry by type
+    appendLine("context(_: $VALIDATION_SCOPE_FQN<*>)")
+    appendLine("inline fun <reified F : Any> validated(property: kotlin.reflect.KProperty0<F>) =")
+    appendLine("    validated(property, validatorFor<F>())")
 }
 }
 
@@ -878,28 +906,39 @@ private data class ValidatorRef(val receiverFqn: String, val validatorExpression
 
 Everything is a fully-qualified name because generated source has no imports to lean on — `$VALIDATION_RESULT_FQN`,
 `kotlin.reflect.KClass`, and the collected `receiverFqn`s all print in full so the file compiles wherever it lands.
-For one `@Validatable LoginRequest`, that produces a `sure/GeneratedValidationExtensions.kt` the compiler picks up in
-the same build:
+For the two `@Validatable` types above, that produces a single `sure/GeneratedValidationExtensions.kt` the compiler
+picks up in the same build — one `validate()` per type, all of them in the shared registry:
 
 ```kotlin
 package sure
 
-fun com.example.LoginRequest.validate(): sure.ValidationResult =
-    com.example.LoginRequest.validator.validate(this)
+fun com.example.Address.validate(): sure.ValidationResult =
+    com.example.Address.validator.validate(this)
+
+fun com.example.User.validate(): sure.ValidationResult =
+    com.example.User.validator.validate(this)
 
 @PublishedApi
 internal val validatorsByClass: Map<kotlin.reflect.KClass<*>, sure.Validator<*>> = mapOf(
-    com.example.LoginRequest::class to com.example.LoginRequest.validator,
+    com.example.Address::class to com.example.Address.validator,
+    com.example.User::class to com.example.User.validator,
 )
 
 @Suppress("UNCHECKED_CAST")
 inline fun <reified T : Any> validatorFor(): sure.Validator<T> =
     validatorsByClass[T::class] as? sure.Validator<T>
         ?: error("No validator registered for ${T::class.qualifiedName}")
+
+context(_: sure.ValidationScope<*>)
+inline fun <reified F : Any> validated(property: kotlin.reflect.KProperty0<F>) =
+    validated(property, validatorFor<F>())
 ```
 
 The `validate()` extension is what the call site at the very top of this post resolves to; `validatorFor<T>()` backs the
-type-keyed registry that `Validator` was made `reified` for back in Step 9.
+type-keyed registry that `Validator` was made `reified` for back in Step 9. The generated `validated(::address)` overload
+closes a small loop with it — because every `@Validatable` type is in the registry, a nested field can pull its
+sub-validator by type with no explicit reference, exactly the call the two snippets above use.
+
 This is the Kotlin equivalent of Scala's automatic type-class derivation — except instead of inductive `given`s resolved
 by the compiler, it's a code generator emitting plain source.
 
