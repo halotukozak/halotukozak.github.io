@@ -2,7 +2,11 @@
 avatarImage:
   src: './avatar.jpeg'
   alt: 'My avatar'
-githubCalendar: 'stelcodes'
+githubCalendar: 'halotukozak'
 ---
 
-Hi! I needed some place to post some code with my comments. Here it is.
+# Bartłomiej Kozak
+
+Scala hacker in an affair with Kotlin
+
+[GitHub](https://github.com/halotukozak) · [LinkedIn](https://www.linkedin.com/in/halotukozak/)

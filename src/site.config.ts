@@ -2,7 +2,7 @@ import type {SiteConfig} from '~/types'
 
 const config: SiteConfig = {
     // Absolute URL to the root of your published site, used for generating links and sitemaps.
-    site: 'https://halotukozak.github.io',
+    site: 'https://halotukozak.com',
     // The name of your site, used in the title and for SEO.
     title: 'halotukozak',
     // The description of your site, used for SEO and RSS feed.
@@ -34,6 +34,10 @@ const config: SiteConfig = {
         {
             name: 'About me',
             url: '/about',
+        },
+        {
+            name: 'Projects',
+            url: '/#projects',
         },
         {
             name: 'Posts',
@@ -116,6 +120,57 @@ const config: SiteConfig = {
         unicorn: '/unicorn.webp',
         duck: '/duck.webp',
     },
+    // Projects displayed in the "Projects" section on the homepage.
+    // Each one links out to its own docs microsite (already hosted as a *.halotukozak.com subdomain).
+    projects: [
+        {
+            name: 'M&DE',
+            description:
+                'Mirror Annotations & Default Extraction. A Scala 3 macro library that extends scala.deriving.Mirror with annotation metadata, default values, generated members, and transparent wrapper support.',
+            url: 'https://made.halotukozak.com',
+            repo: 'https://github.com/halotukozak/made',
+            language: 'Scala',
+        },
+        {
+            name: 'mrpc',
+            description:
+                'AVSystem/commons-style RPC framework for Scala 3, built on Made and mcodec.',
+            url: 'https://mrpc.halotukozak.com',
+            repo: 'https://github.com/halotukozak/mrpc',
+            language: 'Scala',
+        },
+        {
+            name: 'Alpaca',
+            description:
+                'A type-safe lexer and parser library for Scala 3, featuring compile-time validation and a pattern-matching DSL.',
+            url: 'https://alpaca.halotukozak.com',
+            repo: 'https://github.com/halotukozak/alpaca',
+            language: 'Scala',
+        },
+        {
+            name: 'mcodec',
+            description:
+                'GenCodec-style serialization for Scala 3 — a format-agnostic, streaming Input/Output core with type class derivation built on M&DE.',
+            url: 'https://mcodec.halotukozak.com',
+            repo: 'https://github.com/halotukozak/mcodec',
+            language: 'Scala',
+        },
+        {
+            name: 'sure',
+            description: 'Type-safe value validation DSL for Kotlin Multiplatform.',
+            url: 'https://sure.halotukozak.com',
+            repo: 'https://github.com/halotukozak/sure',
+            language: 'Kotlin',
+        },
+        {
+            name: 'justworks',
+            description:
+                'A Gradle plugin that just works and generates type-safe Kotlin Ktor clients from OpenAPI specs.',
+            url: 'https://github.com/AVSystem/justworks',
+            repo: 'https://github.com/AVSystem/justworks',
+            language: 'Kotlin',
+        },
+    ],
 }
 
 export default config

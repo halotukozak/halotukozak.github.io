@@ -164,6 +164,14 @@ export type GiscusConfig = {
   reactionsEnabled: boolean
 }
 
+export type Project = {
+  name: string
+  description: string
+  url: string
+  repo: string
+  language: string
+}
+
 export interface SiteConfig {
   site: string
   font: string
@@ -179,4 +187,5 @@ export interface SiteConfig {
   navLinks: NavLink[]
   giscus: GiscusConfig | undefined,
   characters: Record<string, string>
+  projects: Project[]
 }
