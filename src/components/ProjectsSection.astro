@@ -1,5 +1,6 @@
 ---
 import type { Project } from '~/types'
+import IconChevronsLeft from '~/icons/chevrons-left.svg'
 import IconChevronsRight from '~/icons/chevrons-right.svg'
 import IconGithub from '~/icons/github.svg'
 
@@ -8,40 +9,127 @@ interface Props {
 }
 
 const { projects } = Astro.props
+
+const USER_AGENT = 'nodejs'
+
+interface ProjectCard extends Project {
+  url: string
+  language: string | undefined
+}
+
+const githubToken = import.meta.env.GITHUB_TOKEN
+
+async function fetchProjectCard(project: Project): Promise<ProjectCard> {
+  const repoName = project.repo.replace('https://github.com/', '')
+  const res = await fetch(`https://api.github.com/repos/${repoName}`, {
+    headers: {
+      'User-Agent': USER_AGENT,
+      ...(githubToken ? { Authorization: `Bearer ${githubToken}` } : {}),
+    },
+  })
+  if (!res.ok) {
+    throw new Error(`Fetching GitHub repo data for "${repoName}" failed`)
+  }
+  const data = await res.json()
+  const homepage = typeof data.homepage === 'string' ? data.homepage.replace(/\/$/, '') : ''
+  return {
+    ...project,
+    url: homepage || project.repo,
+    language: data.language ?? undefined,
+  }
+}
+
+const cards = await Promise.all(projects.map(fetchProjectCard))
 ---
 
-<ul class="grid grid-cols-1 sm:grid-cols-2 gap-4 my-5">
-  {
-    projects.map((project) => (
-      <li class="bg-foreground/5 rounded-xl px-4 py-3.5 flex flex-col">
-        <div class="flex items-center justify-between gap-2">
-          <span class="text-lg font-semibold text-heading1">{project.name}</span>
-          <span class="shrink-0 rounded-full bg-foreground/7 text-foreground/90 px-2 py-1 text-xs font-semibold">
-            {project.language}
-          </span>
-        </div>
-        <p class="mt-2.5 mb-4 text-sm/6 text-foreground/90 grow">{project.description}</p>
-        <div class="flex items-center gap-3">
-          <a
-            class="button !py-1 !px-2.5 text-sm items-center"
-            href={project.url}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Docs
-            <IconChevronsRight class="size-4 ml-1" />
-          </a>
-          <a
-            href={project.repo}
-            target="_blank"
-            rel="noopener noreferrer"
-            class="social-link"
-          >
-            <span class="sr-only">{project.name} on GitHub</span>
-            <IconGithub class="size-5" />
-          </a>
-        </div>
-      </li>
-    ))
+<div class="relative my-5 min-w-0 overflow-hidden">
+  <ul
+    id="projects-carousel"
+    class="flex gap-3 overflow-x-auto scroll-smooth snap-x snap-mandatory pb-1 min-w-0"
+  >
+    {
+      cards.map((project) => (
+        <li class="snap-start shrink-0 w-64 sm:w-72 bg-foreground/5 rounded-xl px-3.5 py-3 flex flex-col">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-lg font-semibold text-heading1">{project.name}</span>
+            {project.language && (
+              <span class="shrink-0 rounded-full bg-foreground/7 text-foreground/90 px-2 py-1 text-xs font-semibold">
+                {project.language}
+              </span>
+            )}
+          </div>
+          <p class="mt-2.5 mb-4 text-sm/6 text-foreground/90 grow">{project.description}</p>
+          <div class="flex items-center gap-3">
+            <a
+              class="button !py-1 !px-2.5 text-sm items-center"
+              href={project.url}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Docs
+              <IconChevronsRight class="size-4 ml-1" />
+            </a>
+            <a
+              href={project.repo}
+              target="_blank"
+              rel="noopener noreferrer"
+              class="social-link"
+            >
+              <span class="sr-only">{project.name} on GitHub</span>
+              <IconGithub class="size-5" />
+            </a>
+          </div>
+        </li>
+      ))
+    }
+  </ul>
+  <div class="flex justify-end gap-2 mt-2">
+    <button
+      id="projects-carousel-prev"
+      type="button"
+      aria-label="Previous projects"
+      class="p-1.5 border-2 border-accent/30 rounded-xl text-accent hover:bg-accent/8 transition-colors disabled:opacity-30 disabled:cursor-default disabled:hover:bg-transparent"
+    >
+      <IconChevronsLeft class="size-5" />
+    </button>
+    <button
+      id="projects-carousel-next"
+      type="button"
+      aria-label="Next projects"
+      class="p-1.5 border-2 border-accent/30 rounded-xl text-accent hover:bg-accent/8 transition-colors disabled:opacity-30 disabled:cursor-default disabled:hover:bg-transparent"
+    >
+      <IconChevronsRight class="size-5" />
+    </button>
+  </div>
+</div>
+
+<script>
+  function initProjectsCarousel() {
+    const carousel = document.getElementById('projects-carousel')
+    const prevBtn = document.getElementById('projects-carousel-prev') as HTMLButtonElement | null
+    const nextBtn = document.getElementById('projects-carousel-next') as HTMLButtonElement | null
+    if (!carousel || !prevBtn || !nextBtn) return
+
+    function scrollByCard(direction: 1 | -1) {
+      const card = carousel!.querySelector('li')
+      const distance = card
+        ? card.getBoundingClientRect().width + 12
+        : carousel!.clientWidth * 0.8
+      carousel!.scrollBy({ left: distance * direction, behavior: 'smooth' })
+    }
+
+    function updateButtons() {
+      const maxScroll = carousel!.scrollWidth - carousel!.clientWidth
+      prevBtn!.disabled = carousel!.scrollLeft <= 4
+      nextBtn!.disabled = carousel!.scrollLeft >= maxScroll - 4
+    }
+
+    prevBtn.addEventListener('click', () => scrollByCard(-1))
+    nextBtn.addEventListener('click', () => scrollByCard(1))
+    carousel.addEventListener('scroll', updateButtons, { passive: true })
+    window.addEventListener('resize', updateButtons)
+    updateButtons()
   }
-</ul>
+
+  initProjectsCarousel()
+</script>
