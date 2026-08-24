@@ -669,7 +669,7 @@ self-call check downstream depends on `fun.symbol == methSymbol` matching; here 
 `f(n - 1)` would just fall through as an ordinary, un-trampolined call, silently as stack-unsafe as the code this macro
 exists to fix.
 
-## Guardrails Against Guessing Wrong
+## Preventing Unsafe AST Transformations
 
 `buildChain` assumes every call `selfCallCollector` hands it runs exactly once, unconditionally, right where it was
 found. Two shapes break that assumption without changing what the code looks like at a glance:
