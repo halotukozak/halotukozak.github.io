@@ -2,7 +2,7 @@
 title: 'Direct-Style Deep Recursive Functions in Scala 3'
 description: 'Kotlin''s DeepRecursiveFunction turns deep recursion into a heap-allocated trampoline while keeping direct-style code, built on suspend functions. This post explains why that works, then builds a Scala 3 macro that gets the same trick with no coroutines, no Project Loom, by rewriting a recursive method into a TailRec state machine at compile time.'
 published: 2026-08-24
-draft: true
+draft: false
 tags: [ 'Scala', 'Scala 3', 'macro', 'metaprogramming', 'compile-time', 'Kotlin', 'coroutines', 'trampoline' ]
 toc: true
 ---
