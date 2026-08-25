@@ -741,3 +741,4 @@ coroutines, monadic effect libraries, or Project Loom to write direct-style, sta
 Kotlin achieved this by relying on language-level suspend functions, but Scala's metaprogramming allows us to pull off
 the same trick purely at compile time.
 
+The current version of this macro lives at [deepRecursiveFunction.scala](https://github.com/halotukozak-com/commons/blob/master/commons/deepRecursiveFunction.scala).
