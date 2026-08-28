@@ -13,10 +13,12 @@ interface Props {
   description?: string
   tags?: string[]
   author?: string
+  canonical?: string
 }
 
-const { title, description, tags, author } = Astro.props
+const { title, description, tags, author, canonical } = Astro.props
 const pageUrl = new URL(Astro.url.pathname, Astro.site).href.replace(/\/$/, '') // Remove trailing slash for consistency
+const canonicalUrl = canonical || pageUrl
 const pageType = Astro.url.pathname.startsWith('/posts') ? 'article' : 'website'
 const pageTitle = title ? `${title} - ${siteConfig.title}` : siteConfig.title
 const pageDescription = description || siteConfig.description
@@ -140,7 +142,7 @@ let generatedCss: string = cssLines.join('\n')
     {pageImage && <meta name="twitter:image" content={pageImage} />}
     <meta name="keywords" content={pageKeywords} />
     <meta name="google-site-verification" content="o8y9SwnzxlbnJScMpjEB8YRf06ln9C2CDlcm2Ffj_kc" />
-    <link rel="canonical" href={pageUrl} />
+    <link rel="canonical" href={canonicalUrl} />
     <link rel="sitemap" href="/sitemap-index.xml" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link
