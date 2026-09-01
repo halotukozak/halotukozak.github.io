@@ -130,25 +130,25 @@ const config: SiteConfig = {
             name: 'M&DE',
             description:
                 'Scala 3 macro library extending Mirror derivation with annotation metadata, default values, and transparent wrappers.',
-            repo: 'https://github.com/halotukozak/made',
+            repo: 'https://github.com/halotukozak-com/made',
         },
         {
             name: 'Alpaca',
             description:
                 'Type-safe lexer and parser library for Scala 3, featuring compile-time validation and a pattern-matching DSL for grammars.',
-            repo: 'https://github.com/halotukozak/alpaca',
+            repo: 'https://github.com/halotukozak-com/alpaca',
         },
         {
             name: 'mcodec',
             description:
                 'Format-agnostic, streaming serialization library for Scala 3, built on M&DE with derived type class encoders and decoders.',
-            repo: 'https://github.com/halotukozak/mcodec',
+            repo: 'https://github.com/halotukozak-com/mcodec',
         },
         {
             name: 'sure',
             description:
                 'Type-safe value validation DSL for Kotlin Multiplatform, catching invalid state at compile time instead of at runtime.',
-            repo: 'https://github.com/halotukozak/sure',
+            repo: 'https://github.com/halotukozak-com/sure',
         },
         {
             name: 'justworks',
@@ -160,7 +160,7 @@ const config: SiteConfig = {
         //     name: 'mrpc',
         //     description:
         //         'AVSystem/commons-style RPC framework for Scala 3, built on top of Made and mcodec for wire serialization.',
-        //     repo: 'https://github.com/halotukozak/mrpc',
+        //     repo: 'https://github.com/halotukozak-com/mrpc',
         // },
     ],
 }
