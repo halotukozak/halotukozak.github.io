@@ -20,7 +20,7 @@ wire: the label stays `id`, whatever `@name` you attach. It carries no informati
 these, and not only these, gaps. Once its own mirror is derived, every consumer builds on it with ordinary inline code,
 no macro of their own.
 
-## The `Made` Mirror
+## The Made Mirror
 
 `Made` is a small hierarchy of mirror kinds: `Made.Product` for case classes (including value classes), `Made.Sum`
 for sealed hierarchies, `Made.Singleton` for objects, and `Made.Transparent` for `@transparent` wrappers, single-field
@@ -28,7 +28,9 @@ case classes annotated to derive by delegating to their one field instead of bei
 instance carries the `Label`, `ElemLabels`, and `ElemTypes`, plus two members standard `Mirror` has no equivalent for:
 `Metadata`, which lets you query annotations, and `GeneratedElems`, which exposes synthetic members you define yourself.
 
-## What `Made` Gives You
+## What Made Gives You
+
+This hierarchy carries a handful of concrete capabilities standard `Mirror` has no room for.
 
 ### Default Values
 
@@ -122,6 +124,10 @@ above needs no unwrapping), otherwise generic code recovers `A` by matching on `
 > The mirror carries a path-dependent `Metadata containsOnly Meta` given, so these extension methods prove the tuple
 > is homogeneous.
 
+`@name(literal)` is a different kind of annotation: it overrides `Label` directly (`mirror.Label`,
+`mirror.ElemLabels`, the runtime `elem.label`) instead of landing in `Metadata`, since it extends
+`RefiningAnnotation`, not `MetaAnnotation`.
+
 ### Generated Members
 
 `Made` has a concept standard `Mirror` doesn't: a member that isn't a constructor parameter. Put `@generated` on a
@@ -168,7 +174,7 @@ mirror.wrap("bob@example.com") // Email("bob@example.com")
 A macro generates `unwrap` and `wrap` as a direct field read and a direct constructor call. A type class built on top
 can print or encode a transparent type as its inner value directly.
 
-## `Done`: A Mirror for Behavior
+## Done: A Mirror for Behavior
 
 `Made` describes a type by its data: constructor parameters or subtypes. A `trait` whose whole point is its methods
 carries no data worth mirroring, and `Done` covers that case: services, RPC interfaces, and enums whose cases carry no
@@ -261,6 +267,12 @@ None of that bytecode drop came from touching mcodec's own derivation code. The 
 0.6.0 collapsed that into shared concrete classes carrying real type parameters. The same change cut `typer` time by 23%
 and `genBCode` time by 42%, the two phases that elaborate and emit those classes. That is the point of putting the
 mirror behind a shared library instead of a macro per project.
+
+One lever is still sitting untouched: the `containsOnly` proofs `Made` and `commons` thread through derivation exist
+purely to satisfy the type checker and are never read at runtime. Scala's experimental
+[erased definitions](https://docs.scala-lang.org/scala3/reference/experimental/erased-defs.html) would let the compiler
+drop parameters like that from the bytecode outright, instead of merely compiling them down to something nobody reads.
+If they stabilize, the number above has room to fall further.
 
 Compile time is mcodec's weakest number against the field, and the reason traces to one mechanism: `Made.derived` is a
 `transparent inline given`, so Scala expands the call during `inlining` and then re-elaborates the expanded code through
