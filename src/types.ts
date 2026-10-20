@@ -168,6 +168,8 @@ export type Project = {
   name: string
   description: string
   repo: string
+  // Docs URL; overrides the GitHub repo's homepage when set
+  url?: string
 }
 
 export interface SiteConfig {

@@ -34,7 +34,7 @@ async function fetchProjectCard(project: Project): Promise<ProjectCard> {
   const homepage = typeof data.homepage === 'string' ? data.homepage.replace(/\/$/, '') : ''
   return {
     ...project,
-    url: homepage || project.repo,
+    url: project.url || homepage || project.repo,
     language: data.language ?? undefined,
   }
 }
