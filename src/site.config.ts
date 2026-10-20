@@ -124,7 +124,8 @@ const config: SiteConfig = {
     // description is curated here (GitHub's "About" text tends to be inconsistent length and
     // isn't always written for a small card) — kept roughly equal in length across projects so the
     // cards line up evenly. url (docs microsite) and language are still fetched live from the
-    // GitHub API at build time — see ProjectsSection.astro.
+    // GitHub API at build time — see ProjectsSection.astro. Set url here when the repo's homepage
+    // can't be changed.
     projects: [
         {
             name: 'M&DE',
@@ -161,6 +162,7 @@ const config: SiteConfig = {
             description:
                 'Gradle plugin that just works, generating type-safe Kotlin Ktor clients straight from OpenAPI specifications.',
             repo: 'https://github.com/AVSystem/justworks',
+            url: 'https://avsystem.github.io/justworks',
         },
         // {
         //     name: 'mrpc',
