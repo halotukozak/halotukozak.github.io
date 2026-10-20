@@ -94,7 +94,7 @@ const config: SiteConfig = {
     // Social links to display in the footer.
     socialLinks: {
         github: 'https://github.com/halotukozak',
-        email: 'mailto:bartlomiejkozak@proton.me',
+        email: 'halotukozak@gmail.com',
         linkedin: 'https://www.linkedin.com/in/halotukozak/',
         rss: true, // Set to true to include an RSS feed link in the footer
     },
@@ -143,6 +143,12 @@ const config: SiteConfig = {
             description:
                 'Format-agnostic, streaming serialization library for Scala 3, built on M&DE with derived type class encoders and decoders.',
             repo: 'https://github.com/halotukozak-com/mcodec',
+        },
+        {
+            name: 'regex',
+            description:
+                'Pure-Scala symbolic regex algebra with exact language containment checks, cross-built for JVM, Scala.js and Scala Native.',
+            repo: 'https://github.com/halotukozak-com/regex',
         },
         {
             name: 'sure',
